@@ -9,3 +9,6 @@ api/version.txt
 # macOS
 .DS_Store
 **/.DS_Store
+
+data/
+tests/data/.check_output/
