@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.14"
 resolution-markers = [
     "sys_platform == 'win32'",
@@ -397,6 +397,7 @@ source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "gunicorn" },
+    { name = "numpy" },
     { name = "uvicorn" },
 ]
 
@@ -418,6 +419,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.142.2" },
     { name = "gunicorn", specifier = ">=26.2.0" },
+    { name = "numpy", specifier = ">=2.5.3" },
     { name = "uvicorn", specifier = ">=0.54.0" },
 ]
 
