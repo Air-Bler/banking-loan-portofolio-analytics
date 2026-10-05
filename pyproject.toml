@@ -8,13 +8,8 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
-    "databricks-sdk>=0.146.0",
     "fastapi>=0.142.2",
     "gunicorn>=26.2.0",
-    "numpy>=2.5.3",
-    "pandas>=3.0.6",
-    "pyarrow>=25.0.1",
-    "pyspark>=4.2.0",
     "uvicorn>=0.54.0",
 ]
 
@@ -26,6 +21,13 @@ requires = ["uv_build>=0.12.23,<0.13.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
+data = [
+    "databricks-sdk>=0.146.0",
+    "numpy>=2.5.3",
+    "pandas>=3.0.6",
+    "pyarrow>=25.0.1",
+    "pyspark>=4.2.0",
+]
 dev = [
     "httpx>=0.28.1",
     "pytest>=9.1.1",
@@ -36,3 +38,10 @@ dev = [
 pythonpath = ["."]
 testpaths = ["tests"]
 filterwarnings = ["ignore:Using `httpx` with `starlette.testclient` is deprecated"]
+
+[tool.ruff]
+line-length = 120
+extend-exclude = ["src/loan_analytics/generation"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
