@@ -12,3 +12,4 @@ api/version.txt
 
 data/
 tests/data/.check_output/
+infra/team.local
