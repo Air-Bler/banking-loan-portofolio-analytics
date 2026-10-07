@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.14"
 resolution-markers = [
     "sys_platform == 'win32'",
@@ -599,14 +599,12 @@ name = "loan-analytics"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "databricks-sdk" },
     { name = "fastapi" },
     { name = "gunicorn" },
     { name = "langchain-core" },
     { name = "langchain-openai" },
     { name = "numpy" },
-    { name = "pandas" },
-    { name = "pyarrow" },
-    { name = "pyspark" },
     { name = "python-dotenv" },
     { name = "uvicorn" },
     { name = "uvicorn-worker" },
@@ -628,14 +626,12 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "databricks-sdk", specifier = ">=0.146.0" },
     { name = "fastapi", specifier = ">=0.142.2" },
     { name = "gunicorn", specifier = ">=26.2.0" },
     { name = "langchain-core", specifier = ">=1.6.7" },
     { name = "langchain-openai", specifier = ">=1.6.7" },
     { name = "numpy", specifier = ">=2.5.3" },
-    { name = "pandas", specifier = ">=3.0.6" },
-    { name = "pyarrow", specifier = ">=25.0.1" },
-    { name = "pyspark", specifier = ">=4.2.0" },
     { name = "python-dotenv", specifier = ">=1.2.4" },
     { name = "uvicorn", specifier = ">=0.54.0" },
     { name = "uvicorn-worker", specifier = ">=0.4.0" },
