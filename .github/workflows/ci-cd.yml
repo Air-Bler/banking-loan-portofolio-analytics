@@ -1,0 +1,123 @@
+name: ci-cd
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  RG: rg_gtgh_data_09
+  ACR: acrloant2gk
+  IMAGE: acrloant2gk.azurecr.io/loan-api
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v10.2.0
+      - run: uv sync --locked
+      - run: uv run ruff check .
+
+  test:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v10.2.0
+      - run: uv sync --locked
+      - run: uv run pytest -q --junitxml=test-results.xml
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: test-results
+          path: test-results.xml
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - run: echo "${GITHUB_SHA::7}" > api/version.txt
+      - run: docker build -t "$IMAGE:${GITHUB_SHA::7}" .
+      - if: github.event_name != 'pull_request'
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - if: github.event_name != 'pull_request'
+        run: az acr login -n "$ACR" && docker push "$IMAGE:${GITHUB_SHA::7}"
+
+  deploy-dev:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    concurrency: deploy-dev
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - run: az containerapp update -g "$RG" -n ca-loant2gk-dev --image "$IMAGE:${GITHUB_SHA::7}" -o none
+      - name: Smoke test (the new version answers)
+        run: |
+          URL="https://$(az containerapp show -g "$RG" -n ca-loant2gk-dev --query properties.configuration.ingress.fqdn -o tsv)"
+          for i in $(seq 1 20); do
+            BODY=$(curl -fsS "$URL/health" || true)
+            echo "attempt $i: $BODY"
+            [[ "$BODY" == *"${GITHUB_SHA::7}"* ]] && exit 0
+            sleep 15
+          done
+          exit 1
+
+  approve-prod:
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      issues: write
+    steps:
+      - uses: trstringer/manual-approval@v1
+        with:
+          secret: ${{ github.TOKEN }}
+          approvers: GeorgeKorlos, IoannisPan11, Air-Bler, dimimot, petroskatsikarelis
+          minimum-approvals: 1
+          issue-title: "Deploy ${{ github.sha }} to prod"
+
+  deploy-prod:
+    needs: approve-prod
+    runs-on: ubuntu-latest
+    concurrency: deploy-prod
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - run: az containerapp update -g "$RG" -n ca-loant2gk-prod --image "$IMAGE:${GITHUB_SHA::7}" -o none
+      - name: Smoke test (the new version answers)
+        run: |
+          URL="https://$(az containerapp show -g "$RG" -n ca-loant2gk-prod --query properties.configuration.ingress.fqdn -o tsv)"
+          for i in $(seq 1 20); do
+            BODY=$(curl -fsS "$URL/health" || true)
+            echo "attempt $i: $BODY"
+            [[ "$BODY" == *"${GITHUB_SHA::7}"* ]] && exit 0
+            sleep 15
+          done
+          exit 1
