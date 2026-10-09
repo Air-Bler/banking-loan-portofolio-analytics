@@ -1,0 +1,89 @@
+
+## refresh_info
+  as_of_date                          date
+  refreshed_at                        timestamp
+  batches_loaded                      string
+  -> 1 rows
+
+## kpi_portfolio_monthly
+  month_key                           int
+  branch_key                          bigint
+  product_key                         bigint
+  applications                        bigint
+  requested_amount                    decimal(24,2)
+  decided_applications                bigint
+  approved_applications               bigint
+  decision_days_total                 bigint
+  manual_reviews                      bigint
+  applications_with_dti               bigint
+  high_dti_applications               bigint
+  active_loans                        bigint
+  delinquent_loans_30                 bigint
+  outstanding_balance                 decimal(24,2)
+  -> 5787 rows
+
+## kpi_portfolio_summary
+  applications                        bigint
+  requested_amount                    decimal(24,2)
+  approval_rate                       double
+  avg_decision_days                   double
+  dti_share_below_20                  double
+  dti_share_20_35                     double
+  dti_share_35_50                     double
+  dti_share_above_50                  double
+  delinquency_rate_30                 double
+  outstanding_balance                 decimal(24,2)
+  manual_review_rate                  double
+  -> 1 rows
+
+## dim_branch
+  branch_key                          bigint
+  branch_code                         string
+  branch_name                         string
+  city                                string
+  region                              string
+  opened_date                         date
+  -> 13 rows
+
+## dim_product
+  product_key                         bigint
+  product_code                        string
+  product_name                        string
+  product_family                      string
+  min_amount                          decimal(14,2)
+  max_amount                          decimal(14,2)
+  min_term_months                     int
+  max_term_months                     int
+  base_rate                           decimal(6,4)
+  -> 6 rows
+
+## fact_dq_exception
+  exception_key                       bigint
+  rule_id                             string
+  dq_dimension                        string
+  action                              string
+  description                         string
+  resolution                          string
+  entity                              string
+  record_key                          string
+  branch_key                          bigint
+  business_date_key                   int
+  record_payload                      string
+  source_batch_id                     string
+  source_file                         string
+  received_at                         timestamp
+  detected_at                         timestamp
+  -> 66195 rows
+
+## kg_nodes
+  node_id                             string
+  node_type                           string
+  label                               string
+  properties                          string
+  -> 54663 rows
+
+## kg_edges
+  source_id                           string
+  target_id                           string
+  relationship                        string
+  -> 100771 rows
