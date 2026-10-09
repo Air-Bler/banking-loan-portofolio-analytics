@@ -1,27 +1,24 @@
-from typing import Any
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query
 
+from api.models import BRANCH_CODE, RULE_ID, ExceptionPage
 from api.queries import GoldRepository, get_repository
 
 router = APIRouter(tags=["exceptions"])
 
 
-@router.get("/exceptions")
+@router.get("/exceptions", response_model=ExceptionPage)
 def exceptions(
-    rule_id: str | None = None,
-    action: str | None = None,
-    branch_code: str | None = None,
-    batch_id: str | None = None,
-    limit: int = Query(default=20, ge=1, le=1000),
-    offset: int = Query(default=0, ge=0),
+    rule_id: Annotated[str | None, Query(pattern=RULE_ID, examples=["APP-03"])] = None,
+    action: Literal["FLAG", "REJECT"] | None = None,
+    branch_code: Annotated[str | None, Query(pattern=BRANCH_CODE)] = None,
+    batch_id: Annotated[str | None, Query(max_length=50, examples=["batch_001"])] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
     repository: GoldRepository = Depends(get_repository),
-) -> dict[str, Any]:
+) -> dict:
+    """Data-quality exception records, paged and ordered by rule_id, record_key."""
     return repository.get_exceptions(
-        rule_id=rule_id,
-        action=action,
-        branch_code=branch_code,
-        batch_id=batch_id,
-        limit=limit,
-        offset=offset,
+        rule_id=rule_id, action=action, branch_code=branch_code, batch_id=batch_id, limit=limit, offset=offset
     )

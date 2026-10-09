@@ -1,41 +1,20 @@
-from typing import Any, Literal
-
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
 
+from api.metrics import metric_catalogue
+from api.models import AnalyticsQuery, AnalyticsResponse, MetricCatalogue
 from api.queries import GoldRepository, get_repository
 
 router = APIRouter(tags=["analytics"])
 
 
-class AnalyticsQuery(BaseModel):
-    metric: Literal[
-        "approval_rate",
-        "applications",
-        "outstanding_balance",
-        "dti_band_share",
-    ]
-    group_by: Literal["branch", "product", "month", "year"] | None = None
-    filters: dict[str, Any] | None = None
-    limit: int = Field(default=100, ge=1, le=1000)
+@router.post("/analytics/query", response_model=AnalyticsResponse)
+def query_analytics(body: AnalyticsQuery, repository: GoldRepository = Depends(get_repository)) -> dict:
+    """One KPI, optionally grouped by branch, product, month or year, and filtered."""
+    filters = body.filters.model_dump(mode="json", exclude_none=True)
+    return repository.query_metric(body.metric, group_by=body.group_by, filters=filters, limit=body.limit)
 
 
-@router.post("/analytics/query")
-def query_analytics(
-    request: AnalyticsQuery,
-    repository: GoldRepository = Depends(get_repository),
-) -> dict[str, Any]:
-    return repository.query_metric(
-        request.metric,
-        group_by=request.group_by,
-        filters=request.filters,
-        limit=request.limit,
-    )
-
-
-@router.get("/metadata/metrics")
-def metric_catalogue(
-    repository: GoldRepository = Depends(get_repository),
-) -> dict[str, Any]:
-    metrics = repository.metric_catalogue()
-    return {"metrics": metrics}
+@router.get("/metadata/metrics", response_model=MetricCatalogue)
+def list_metrics() -> dict:
+    """The 9 metrics with their definitions (a list in code: no Databricks call)."""
+    return {"metrics": metric_catalogue()}
