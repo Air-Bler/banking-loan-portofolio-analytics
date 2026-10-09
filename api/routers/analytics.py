@@ -9,7 +9,12 @@ router = APIRouter(tags=["analytics"])
 
 
 class AnalyticsQuery(BaseModel):
-    metric: str = Field(min_length=1)
+    metric: Literal[
+        "approval_rate",
+        "applications",
+        "outstanding_balance",
+        "dti_band_share",
+    ]
     group_by: Literal["branch", "product", "month", "year"] | None = None
     filters: dict[str, Any] | None = None
     limit: int = Field(default=100, ge=1, le=1000)

@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from api.errors import DataUnavailable
 from api.queries import GoldRepository
 
 
@@ -23,7 +24,15 @@ class FakeRepository(GoldRepository):
          "definition": "Share of applications in a DTI band"},
     ]
 
+    def __init__(self, fail: bool = False):
+        self._fail = fail
+
+    def _raise_if_fail(self) -> None:
+        if self._fail:
+            raise DataUnavailable("simulated test outage")
+
     def metric_catalogue(self) -> list[dict[str, Any]]:
+        self._raise_if_fail()
         return deepcopy(self._metrics)
 
     def query_metric(
@@ -33,6 +42,7 @@ class FakeRepository(GoldRepository):
         filters: dict[str, Any] | None = None,
         limit: int = 100,
     ) -> dict[str, Any]:
+        self._raise_if_fail()
         rows = {
             "approval_rate": [
                 {"group": "BR001", "value": 0.75, "numerator": 15, "denominator": 20},
@@ -66,6 +76,7 @@ class FakeRepository(GoldRepository):
         }
 
     def branch_summary(self, branch_code: str) -> dict[str, Any] | None:
+        self._raise_if_fail()
         summaries = {
             "BR001": {"branch_code": "BR001", "branch_name": "Athens Central",
                       "applications": 20, "approval_rate": 0.75,
@@ -88,6 +99,7 @@ class FakeRepository(GoldRepository):
         limit: int = 20,
         offset: int = 0,
     ) -> dict[str, Any]:
+        self._raise_if_fail()
         items = [
             {"exception_key": 1, "rule_id": "DQ001", "action": "review",
              "description": "Missing requested amount", "branch_code": "BR001",
@@ -111,6 +123,7 @@ class FakeRepository(GoldRepository):
         }
 
     def connected_exposure(self, application_id: str) -> dict[str, Any] | None:
+        self._raise_if_fail()
         exposures = {
             "APP-001": {
                 "application_id": "APP-001",
@@ -125,6 +138,7 @@ class FakeRepository(GoldRepository):
         return {**result, "as_of_date": self.as_of_date, "source": self.source}
 
     def refresh_info(self) -> dict[str, Any]:
+        self._raise_if_fail()
         return {
             "as_of_date": self.as_of_date,
             "refreshed_at": "2026-01-01T08:00:00Z",
