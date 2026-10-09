@@ -1,28 +1,57 @@
+"""FakeRepository: the same methods as GoldRepository over a few hand-made rows in the real Gold formats.
+
+Tests never touch Databricks. FakeRepository(fail=True) raises DataUnavailable from every data method,
+as if the warehouse were down.
+"""
+
 from __future__ import annotations
 
 from copy import deepcopy
 from typing import Any
 
 from api.errors import DataUnavailable
+from api.metrics import metric_catalogue, metric_info
 from api.queries import GoldRepository
+
+AS_OF = "2025-12-31"
+
+BRANCHES = {"BR001": "Athens Centre", "BR003": "Thessaloniki"}
+GROUPS = {
+    None: [None],
+    "branch": ["BR001", "BR003"],
+    "product": ["PL-STD", "AUT-NEW"],
+    "month": ["202511", "202512"],
+    "year": ["2025"],
+}
+DTI_BANDS = {"below_20": 0.31, "20_35": 0.42, "35_50": 0.19, "above_50": 0.08}
+
+EXCEPTIONS = [
+    {"exception_key": 1, "rule_id": "APP-03", "dq_dimension": "validity", "action": "REJECT",
+     "description": "Requested amount outside the product range", "entity": "loan_applications",
+     "record_key": "LA000225", "branch_code": "BR001", "source_batch_id": "batch_001",
+     "detected_at": "2026-10-05T09:40:00Z"},
+    {"exception_key": 2, "rule_id": "CUS-02", "dq_dimension": "completeness", "action": "FLAG",
+     "description": "Missing e-mail", "entity": "customers",
+     "record_key": "3f9a1c0b7d2e4a51", "branch_code": "BR003", "source_batch_id": "batch_002",
+     "detected_at": "2026-10-05T09:41:00Z"},
+    {"exception_key": 3, "rule_id": "TRX-04", "dq_dimension": "consistency", "action": "FLAG",
+     "description": "Duplicate transaction", "entity": "transactions",
+     "record_key": "TX0001234", "branch_code": "BR001", "source_batch_id": "batch_002",
+     "detected_at": "2026-10-05T09:42:00Z"},
+]
+
+EXPOSURE = {
+    "LA000225": [
+        {"customer_node": "customer:C00101", "application_id": "LA000225", "status_code": "APPROVED",
+         "outstanding_balance": 12500.0, "is_delinquent_30": 0},
+        {"customer_node": "customer:C00102", "application_id": "LA000318", "status_code": "APPROVED",
+         "outstanding_balance": 8300.5, "is_delinquent_30": 1},
+    ],
+}
 
 
 class FakeRepository(GoldRepository):
     """Small, deterministic Gold dataset for API tests."""
-
-    as_of_date = "2025-12-31"
-    source = "fake.gold"
-
-    _metrics = [
-        {"name": "approval_rate", "label": "Approval rate", "unit": "ratio",
-         "definition": "approved / (approved + rejected)"},
-        {"name": "applications", "label": "Applications", "unit": "count",
-         "definition": "Number of applications"},
-        {"name": "outstanding_balance", "label": "Outstanding balance", "unit": "EUR",
-         "definition": "Outstanding loan balance"},
-        {"name": "dti_band_share", "label": "DTI band share", "unit": "ratio",
-         "definition": "Share of applications in a DTI band"},
-    ]
 
     def __init__(self, fail: bool = False):
         self._fail = fail
@@ -32,115 +61,72 @@ class FakeRepository(GoldRepository):
             raise DataUnavailable("simulated test outage")
 
     def metric_catalogue(self) -> list[dict[str, Any]]:
-        self._raise_if_fail()
-        return deepcopy(self._metrics)
+        return metric_catalogue()
 
-    def query_metric(
-        self,
-        metric: str,
-        group_by: str | None = None,
-        filters: dict[str, Any] | None = None,
-        limit: int = 100,
-    ) -> dict[str, Any]:
+    def query_metric(self, metric, group_by=None, filters=None, limit=100) -> dict[str, Any]:
         self._raise_if_fail()
-        rows = {
-            "approval_rate": [
-                {"group": "BR001", "value": 0.75, "numerator": 15, "denominator": 20},
-                {"group": "BR002", "value": 0.60, "numerator": 12, "denominator": 20},
-            ],
-            "applications": [
-                {"group": "BR001", "value": 20},
-                {"group": "BR002", "value": 20},
-            ],
-            "outstanding_balance": [
-                {"group": "BR001", "value": 125000.0},
-                {"group": "BR002", "value": 98000.0},
-            ],
-            "dti_band_share": [
-                {"group": "below_20", "value": 0.30},
-                {"group": "20_35", "value": 0.40},
-                {"group": "35_50", "value": 0.20},
-                {"group": "above_50", "value": 0.10},
-            ],
-        }
+        if metric == "dti_band_share":
+            rows = [{"group": band, "value": share} for band, share in DTI_BANDS.items()]
+            source = "gold.kpi_portfolio_summary"
+        else:
+            rows = [{"group": g, "value": 0.6, "numerator": 60, "denominator": 100} for g in GROUPS[group_by]]
+            source = "gold.kpi_portfolio_monthly"
         return {
-            "metric": next(
-                (item for item in self._metrics if item["name"] == metric),
-                {"name": metric},
-            ),
+            "metric": metric_info(metric),
             "group_by": group_by,
             "filters": filters or {},
-            "rows": deepcopy(rows.get(metric, []))[:limit],
-            "as_of_date": self.as_of_date,
-            "source": self.source,
+            "rows": rows[:limit],
+            "as_of_date": AS_OF,
+            "source": source,
         }
 
-    def branch_summary(self, branch_code: str) -> dict[str, Any] | None:
+    def branch_summary(self, branch_code) -> dict[str, Any] | None:
         self._raise_if_fail()
-        summaries = {
-            "BR001": {"branch_code": "BR001", "branch_name": "Athens Central",
-                      "applications": 20, "approval_rate": 0.75,
-                      "outstanding_balance": 125000.0},
-            "BR002": {"branch_code": "BR002", "branch_name": "Thessaloniki",
-                      "applications": 20, "approval_rate": 0.60,
-                      "outstanding_balance": 98000.0},
-        }
-        result = summaries.get(branch_code)
-        if result is None:
+        if branch_code not in BRANCHES:
             return None
-        return {**result, "as_of_date": self.as_of_date, "source": self.source}
-
-    def get_exceptions(
-        self,
-        rule_id: str | None = None,
-        action: str | None = None,
-        branch_code: str | None = None,
-        batch_id: str | None = None,
-        limit: int = 20,
-        offset: int = 0,
-    ) -> dict[str, Any]:
-        self._raise_if_fail()
-        items = [
-            {"exception_key": 1, "rule_id": "DQ001", "action": "review",
-             "description": "Missing requested amount", "branch_code": "BR001",
-             "source_batch_id": "batch-001"},
-            {"exception_key": 2, "rule_id": "DQ002", "action": "reject",
-             "description": "Invalid term", "branch_code": "BR002",
-             "source_batch_id": "batch-001"},
-        ]
-        filters = {
-            "rule_id": rule_id, "action": action, "branch_code": branch_code,
-            "source_batch_id": batch_id,
+        kpis = {"applications": 412, "approval_rate": 0.592, "delinquency_rate_30": 0.031}
+        return {
+            "branch_code": branch_code,
+            "branch_name": BRANCHES[branch_code],
+            "kpis": kpis,
+            "by_product": [{"product_code": "PL-STD", "kpis": kpis}],
+            "as_of_date": AS_OF,
+            "source": "gold.kpi_portfolio_monthly",
         }
-        filtered = [
-            item for item in items
-            if all(value is None or item[key] == value for key, value in filters.items())
+
+    def get_exceptions(self, rule_id=None, action=None, branch_code=None, batch_id=None, limit=20, offset=0):
+        self._raise_if_fail()
+        rows = [
+            r for r in EXCEPTIONS
+            if (rule_id is None or r["rule_id"] == rule_id)
+            and (action is None or r["action"] == action)
+            and (branch_code is None or r["branch_code"] == branch_code)
+            and (batch_id is None or r["source_batch_id"] == batch_id)
         ]
         return {
-            "items": deepcopy(filtered[offset : offset + limit]),
-            "total": len(filtered), "limit": limit, "offset": offset,
-            "as_of_date": self.as_of_date, "source": self.source,
+            "items": deepcopy(rows[offset:offset + limit]),
+            "total": len(rows),
+            "limit": limit,
+            "offset": offset,
+            "as_of_date": AS_OF,
+            "source": "gold.fact_dq_exception",
         }
 
-    def connected_exposure(self, application_id: str) -> dict[str, Any] | None:
+    def connected_exposure(self, application_id) -> dict[str, Any] | None:
         self._raise_if_fail()
-        exposures = {
-            "APP-001": {
-                "application_id": "APP-001",
-                "nodes": [{"id": "APP-001", "type": "application", "label": "Application 001"}],
-                "edges": [{"source": "APP-001", "target": "CUS-001",
-                           "relationship": "belongs_to"}],
-            }
-        }
-        result = exposures.get(application_id)
-        if result is None:
+        rows = EXPOSURE.get(application_id)
+        if not rows:
             return None
-        return {**result, "as_of_date": self.as_of_date, "source": self.source}
+        return {
+            "application_id": application_id,
+            "members": len({r["customer_node"] for r in rows}),
+            "applications": deepcopy(rows),
+            "total_outstanding": sum(r["outstanding_balance"] for r in rows),
+            "delinquent_loans": sum(r["is_delinquent_30"] for r in rows),
+            "as_of_date": AS_OF,
+            "source": "gold.kg_nodes, gold.kg_edges",
+        }
 
     def refresh_info(self) -> dict[str, Any]:
         self._raise_if_fail()
-        return {
-            "as_of_date": self.as_of_date,
-            "refreshed_at": "2026-01-01T08:00:00Z",
-            "source": self.source,
-        }
+        return {"as_of_date": AS_OF, "refreshed_at": "2026-10-05T09:44:49Z", "source": "gold.refresh_info"}

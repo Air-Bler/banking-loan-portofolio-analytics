@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from api.errors import DataUnavailable
+from api.metrics import metric_catalogue
 
 
 class GoldRepository:
@@ -14,7 +15,7 @@ class GoldRepository:
     """
 
     def metric_catalogue(self) -> list[dict[str, Any]]:
-        raise DataUnavailable("Gold metric catalogue is unavailable")
+        return metric_catalogue()  
 
     def query_metric(
         self,
