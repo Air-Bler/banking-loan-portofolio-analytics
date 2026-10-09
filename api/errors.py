@@ -12,7 +12,7 @@ from starlette.exceptions import HTTPException
 
 log = logging.getLogger("api.errors")
 
-CODES = {401: "unauthorized", 404: "not_found", 422: "validation_error"}
+CODES = {401: "unauthorized", 404: "not_found", 405: "method_not_allowed", 422: "validation_error"}
 
 
 class DataUnavailable(Exception):
@@ -22,7 +22,9 @@ class DataUnavailable(Exception):
 def error_response(request: Request, status: int, code: str, message: str, details: list | None = None) -> JSONResponse:
     correlation_id = getattr(request.state, "correlation_id", None) 
     body = {"error": {"code": code, "message": message, "correlation_id": correlation_id, "details": details or []}}
-    return JSONResponse(status_code=status, content=body)
+    # Set the header here too: a 500 is answered outside the correlation-ID middleware.
+    headers = {"X-Correlation-ID": correlation_id} if correlation_id else None
+    return JSONResponse(status_code=status, content=body, headers=headers)
 
 
 async def http_error(request: Request, exc: HTTPException) -> JSONResponse:
@@ -44,7 +46,8 @@ async def data_unavailable(request: Request, exc: DataUnavailable) -> JSONRespon
 
 
 async def internal_error(request: Request, exc: Exception) -> JSONResponse:
-    log.exception("unexpected error")  
+    # The middleware has already reset its context here, so pass the ID explicitly.
+    log.exception("unexpected error", extra={"fields": {"correlation_id": getattr(request.state, "correlation_id", None)}})  
     return error_response(request, 500, "internal_error", "Something went wrong")
 
 

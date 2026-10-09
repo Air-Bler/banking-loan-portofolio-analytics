@@ -38,7 +38,7 @@ def run_query(settings: Settings, query: str, params: dict | None = None) -> lis
         with sql.connect(
             server_hostname=settings.databricks_host,
             http_path=settings.databricks_http_path,
-            access_token=settings.databricks_token,
+            access_token=settings.databricks_token.get_secret_value(),
             _retry_stop_after_attempts_count=3,  
             _socket_timeout=30,
         ) as conn, conn.cursor() as cur:

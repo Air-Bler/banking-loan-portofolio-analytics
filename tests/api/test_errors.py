@@ -43,8 +43,11 @@ class ExplodingRepository:
 
 def test_unexpected_error_is_500_without_stack_trace(client):
     app.dependency_overrides[get_repository] = lambda: ExplodingRepository()
-    response = TestClient(app, raise_server_exceptions=False).post("/analytics/query", json={"metric": "applications"})
+    response = TestClient(app, headers={"X-API-Key": "test-key"}, raise_server_exceptions=False).post("/analytics/query", json={"metric": "applications"})
     error = assert_error(response, 500, "internal_error")
     assert "secret detail" not in response.text
     assert "Traceback" not in response.text
     assert error["message"] == "Something went wrong"
+
+def test_wrong_method_is_405(client):
+    assert_error(client.delete("/health"), 405, "method_not_allowed")
