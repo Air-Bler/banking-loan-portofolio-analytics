@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import logging
 
-from conftest import tool_call
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from llm_helpers import tool_call
 
 from loan_analytics.llm.errors import ToolExecutionError
 from loan_analytics.llm.service import NO_TOOL_ANSWER, AnalyticsAssistant
