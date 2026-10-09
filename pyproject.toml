@@ -9,11 +9,14 @@ authors = [
 requires-python = ">=3.14"
 dependencies = [
     "databricks-sdk>=0.146.0",
+    "databricks-sql-connector>=4.6.0",
     "fastapi>=0.142.2",
     "gunicorn>=26.2.0",
     "langchain-core>=1.6.7",
     "langchain-openai>=1.6.7",
     "numpy>=2.5.3",
+    "pydantic-settings>=2.15.0",
+    "pyjwt[crypto]>=2.15.1",
     "python-dotenv>=1.2.4",
     "uvicorn>=0.54.0",
     "uvicorn-worker>=0.4.0",
