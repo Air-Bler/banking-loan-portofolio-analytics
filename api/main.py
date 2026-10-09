@@ -5,20 +5,25 @@ from fastapi import Depends, FastAPI
 
 from api.errors import register_error_handlers
 from api.models import ReadyResponse
+from api.observability import configure_logging, register_correlation_id
 from api.queries import GoldRepository, get_repository
 from api.routers import analytics, assistant, branches, exceptions, graph
+from api.security import require_auth
 
+configure_logging()
 app = FastAPI(title="Loan Portfolio Analytics API")
 register_error_handlers(app)
+register_correlation_id(app)
+protected = [Depends(require_auth)]  # every route except /health
 VERSION_FILE = Path(__file__).with_name(
     "version.txt"
 )  
 
-app.include_router(analytics.router)
-app.include_router(branches.router)
-app.include_router(exceptions.router)
-app.include_router(graph.router)
-app.include_router(assistant.router)
+app.include_router(analytics.router, dependencies=protected)
+app.include_router(branches.router, dependencies=protected)
+app.include_router(exceptions.router, dependencies=protected)
+app.include_router(graph.router, dependencies=protected)
+app.include_router(assistant.router, dependencies=protected)
 
 
 @app.get("/health")
@@ -31,7 +36,7 @@ def health() -> dict:
     }
 
 
-@app.get("/ready", response_model=ReadyResponse)
+@app.get("/ready", response_model=ReadyResponse, dependencies=protected)
 def ready(repository: GoldRepository = Depends(get_repository)) -> dict:
     """The warehouse answers and the Gold data has an as-of date; 503 data_unavailable otherwise."""
     info = repository.refresh_info()

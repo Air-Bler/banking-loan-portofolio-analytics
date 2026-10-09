@@ -110,6 +110,7 @@ ISO 8601 UTC. Formatting is the frontend's job.
 |---|---|---|
 | 401 | `unauthorized` | missing or invalid API key or token |
 | 404 | `not_found` | unknown branch, application or route |
+| 405 | `method_not_allowed` | the route exists but not with that HTTP method |
 | 422 | `validation_error` | bad body or parameter; `details` lists each field and message |
 | 503 | `data_unavailable` | Databricks down or timed out |
 | 503 | `assistant_unavailable` | the assistant isn't wired in or Azure OpenAI is down |

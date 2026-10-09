@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 
 
@@ -7,11 +8,11 @@ class Settings(BaseSettings):
     """Read only from environment variables; names match .env.example and the LLM pair's code."""
 
     app_env: str = "local"  
-    api_keys: str = ""  
+    api_keys: SecretStr = SecretStr("")  # SecretStr: printed as ********** if settings are ever logged
 
     databricks_host: str = ""
     databricks_warehouse_id: str = ""
-    databricks_token: str = ""
+    databricks_token: SecretStr = SecretStr("")
     databricks_catalog: str = "data2026acc123456"
     databricks_schema: str = "team2"
 
@@ -24,7 +25,7 @@ class Settings(BaseSettings):
 
     @property
     def api_key_list(self) -> list[str]:
-        return [key.strip() for key in self.api_keys.split(",") if key.strip()]
+        return [key.strip() for key in self.api_keys.get_secret_value().split(",") if key.strip()]
 
 
 @lru_cache
