@@ -23,7 +23,7 @@ APPLICATION_ID = r"^LA\d{6}$"
 RULE_ID = r"^(CUS|APP|REP|TRX|MAC)-\d{2}$"
 
 
-# --- /analytics/query and /metadata/metrics ---
+
 
 
 class AnalyticsFilters(BaseModel):
@@ -56,7 +56,7 @@ class AnalyticsQuery(BaseModel):
 
     @model_validator(mode="after")
     def check_combination(self):
-        # Gold has dti_band_share only for the whole portfolio
+        
         if self.metric == "dti_band_share" and (self.group_by or self.filters.model_dump(exclude_none=True)):
             raise ValueError("dti_band_share is only available for the whole portfolio: no group_by or filters")
         if self.filters.date_from and self.filters.date_to and self.filters.date_from > self.filters.date_to:
@@ -153,3 +153,12 @@ class ConnectedExposure(BaseModel):
     delinquent_loans: int
     as_of_date: date
     source: str
+
+
+
+
+
+class ReadyResponse(BaseModel):
+    status: Literal["ready"]
+    as_of_date: date | None
+    refreshed_at: datetime | None
