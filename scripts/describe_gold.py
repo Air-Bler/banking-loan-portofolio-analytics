@@ -1,8 +1,9 @@
 import os
+
 from databricks import sql
 
-catalog = os.environ["LOAN_CATALOG"]
-schema = os.environ["LOAN_SCHEMA"]
+catalog = os.environ["DATABRICKS_CATALOG"]
+schema = os.environ["DATABRICKS_SCHEMA"]
 
 TABLES = ["refresh_info", "kpi_portfolio_monthly", "kpi_portfolio_summary",
           "dim_branch", "dim_product", "fact_dq_exception", "kg_nodes", "kg_edges"]
@@ -10,7 +11,7 @@ TABLES = ["refresh_info", "kpi_portfolio_monthly", "kpi_portfolio_summary",
 lines = []
 with sql.connect(
     server_hostname=os.environ["DATABRICKS_HOST"],
-    http_path=os.environ["DATABRICKS_HTTP_PATH"],
+    http_path=f"/sql/1.0/warehouses/{os.environ['DATABRICKS_WAREHOUSE_ID']}",
     access_token=os.environ["DATABRICKS_TOKEN"],
     _retry_stop_after_attempts_count=3,
     _socket_timeout=30,

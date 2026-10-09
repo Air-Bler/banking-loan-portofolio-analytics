@@ -3,10 +3,18 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
+from api.routers import analytics, assistant, branches, exceptions, graph
+
 app = FastAPI(title="Loan Portfolio Analytics API")
 VERSION_FILE = Path(__file__).with_name(
     "version.txt"
 )  # written by CI: the commit being run
+
+app.include_router(analytics.router)
+app.include_router(branches.router)
+app.include_router(exceptions.router)
+app.include_router(graph.router)
+app.include_router(assistant.router)
 
 
 @app.get("/health")
