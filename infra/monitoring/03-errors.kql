@@ -1,0 +1,8 @@
+// Server errors and logged errors, newest first, with correlation ID (last 24 h)
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(24h) and Log_s startswith "{"
+| extend j = parse_json(Log_s)
+| where toint(j.status) >= 500 or tostring(j.level) in ("ERROR", "CRITICAL")
+| project TimeGenerated, app = ContainerAppName_s, level = tostring(j.level), status = toint(j.status),
+    path = tostring(j.path), message = tostring(j.message), correlation_id = tostring(j.correlation_id)
+| order by TimeGenerated desc

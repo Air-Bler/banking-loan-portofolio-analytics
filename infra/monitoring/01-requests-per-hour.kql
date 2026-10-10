@@ -1,0 +1,9 @@
+// Requests per hour and app, with 4xx and 5xx counts (last 24 h)
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(24h) and Log_s startswith "{"
+| extend j = parse_json(Log_s)
+| where tostring(j.logger) == "api.access"
+| extend status = toint(j.status)
+| summarize requests = count(), client_errors = countif(status between (400 .. 499)), server_errors = countif(status >= 500)
+    by app = ContainerAppName_s, hour = bin(TimeGenerated, 1h)
+| order by hour desc

@@ -1,0 +1,8 @@
+// Calls rejected for a missing or wrong key or token (401/403), per app and route (last 24 h)
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(24h) and Log_s startswith "{"
+| extend j = parse_json(Log_s)
+| where tostring(j.logger) == "api.access" and toint(j.status) in (401, 403)
+| summarize attempts = count(), first_seen = min(TimeGenerated), last_seen = max(TimeGenerated)
+    by app = ContainerAppName_s, path = tostring(j.path)
+| order by attempts desc

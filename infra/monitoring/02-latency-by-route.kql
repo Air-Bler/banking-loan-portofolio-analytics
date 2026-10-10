@@ -1,0 +1,9 @@
+// Response time per route: median, 95th percentile and slowest, in ms (last 24 h)
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(24h) and Log_s startswith "{"
+| extend j = parse_json(Log_s)
+| where tostring(j.logger) == "api.access"
+| extend ms = todouble(j.duration_ms)
+| summarize requests = count(), p50_ms = percentile(ms, 50), p95_ms = percentile(ms, 95), max_ms = max(ms)
+    by app = ContainerAppName_s, path = tostring(j.path)
+| order by p95_ms desc
