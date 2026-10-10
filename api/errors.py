@@ -19,6 +19,10 @@ class DataUnavailable(Exception):
     """Databricks failed or timed out; the API answers 503 data_unavailable."""
 
 
+class AssistantUnavailable(Exception):
+    """The assistant isn't configured or Azure OpenAI is down; the API answers 503 assistant_unavailable."""
+
+
 def error_response(request: Request, status: int, code: str, message: str, details: list | None = None) -> JSONResponse:
     correlation_id = getattr(request.state, "correlation_id", None) 
     body = {"error": {"code": code, "message": message, "correlation_id": correlation_id, "details": details or []}}
@@ -45,6 +49,11 @@ async def data_unavailable(request: Request, exc: DataUnavailable) -> JSONRespon
     return error_response(request, 503, "data_unavailable", "The data source is unavailable, try again later")
 
 
+async def assistant_unavailable(request: Request, exc: AssistantUnavailable) -> JSONResponse:
+    log.warning("assistant unavailable: %s", exc)  # a reason we wrote, never the question or the raw error
+    return error_response(request, 503, "assistant_unavailable", "The assistant is unavailable, try again later")
+
+
 async def internal_error(request: Request, exc: Exception) -> JSONResponse:
     # The middleware has already reset its context here, so pass the ID explicitly.
     log.exception("unexpected error", extra={"fields": {"correlation_id": getattr(request.state, "correlation_id", None)}})  
@@ -55,4 +64,5 @@ def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(HTTPException, http_error)
     app.add_exception_handler(RequestValidationError, validation_error)
     app.add_exception_handler(DataUnavailable, data_unavailable)
+    app.add_exception_handler(AssistantUnavailable, assistant_unavailable)
     app.add_exception_handler(Exception, internal_error)
