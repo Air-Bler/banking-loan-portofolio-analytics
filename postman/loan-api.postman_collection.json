@@ -1,0 +1,884 @@
+{
+  "info": {
+    "name": "Loan Portfolio Analytics API",
+    "description": "Requests for every route of the API, with a test on each.\n\nVariables: `baseUrl` (http://127.0.0.1:8000 locally, the dev URL in CI) and `apiKey` (empty here: pass it at run time, never commit a real key).\n\nEvery request is also checked for an `X-Correlation-ID` response header.\n\nRun: `npx newman run postman/loan-api.postman_collection.json --env-var baseUrl=... --env-var apiKey=... --timeout-request 60000`. The Assistant folder needs AZURE_OPENAI_* configured; until then add `--folder Platform --folder Data --folder Errors`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "X-API-Key"
+      },
+      {
+        "key": "value",
+        "value": "{{apiKey}}"
+      },
+      {
+        "key": "in",
+        "value": "header"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"X-Correlation-ID header\", () => pm.response.to.have.header(\"X-Correlation-ID\"));"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8000"
+    },
+    {
+      "key": "apiKey",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Platform",
+      "description": "Health, readiness and the API key check.",
+      "item": [
+        {
+          "name": "Health (no key needed)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"status ok\", () => pm.expect(pm.response.json().status).to.eql(\"ok\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Ready",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"ready with an as-of date\", () => {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.status).to.eql(\"ready\");",
+                  "    pm.expect(b.as_of_date).to.match(/^\\d{4}-\\d{2}-\\d{2}$/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ready",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ready"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Ready without a key -> 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"error format: unauthorized\", () => {",
+                  "    const e = pm.response.json().error;",
+                  "    pm.expect(e.code).to.eql(\"unauthorized\");",
+                  "    pm.expect(e).to.have.all.keys(\"code\", \"message\", \"correlation_id\", \"details\");",
+                  "    pm.expect(e.correlation_id).to.eql(pm.response.headers.get(\"X-Correlation-ID\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ready",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ready"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Ready with a wrong key -> 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"error format: unauthorized\", () => {",
+                  "    const e = pm.response.json().error;",
+                  "    pm.expect(e.code).to.eql(\"unauthorized\");",
+                  "    pm.expect(e).to.have.all.keys(\"code\", \"message\", \"correlation_id\", \"details\");",
+                  "    pm.expect(e.correlation_id).to.eql(pm.response.headers.get(\"X-Correlation-ID\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ready",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ready"
+              ]
+            },
+            "auth": {
+              "type": "apikey",
+              "apikey": [
+                {
+                  "key": "key",
+                  "value": "X-API-Key"
+                },
+                {
+                  "key": "value",
+                  "value": "wrong-key"
+                },
+                {
+                  "key": "in",
+                  "value": "header"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Data",
+      "description": "One request per data route, on real Gold data.",
+      "item": [
+        {
+          "name": "Approval rate by branch, 2025",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"one row per branch, rates as ratios\", () => {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.metric.name).to.eql(\"approval_rate\");",
+                  "    pm.expect(b.source).to.eql(\"gold.kpi_portfolio_monthly\");",
+                  "    pm.expect(b.rows.length).to.be.above(0);",
+                  "    b.rows.forEach(r => pm.expect(r.value).to.be.within(0, 1));",
+                  "    pm.expect(b.correlation_id).to.eql(pm.response.headers.get(\"X-Correlation-ID\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/query",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analytics",
+                "query"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"metric\": \"approval_rate\",\n  \"group_by\": \"branch\",\n  \"filters\": {\n    \"date_from\": \"2025-01-01\",\n    \"date_to\": \"2025-12-31\"\n  },\n  \"limit\": 100\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Outstanding balance by year",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"one row per year\", () => pm.expect(pm.response.json().rows[0].group).to.match(/^\\d{4}$/));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/query",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analytics",
+                "query"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"metric\": \"outstanding_balance\",\n  \"group_by\": \"year\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "DTI band share (whole portfolio)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"four DTI bands from the summary\", () => {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.rows.length).to.eql(4);",
+                  "    pm.expect(b.source).to.eql(\"gold.kpi_portfolio_summary\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/query",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analytics",
+                "query"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"metric\": \"dti_band_share\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Metric catalogue",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"nine metrics\", () => pm.expect(pm.response.json().metrics.length).to.eql(9));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/metadata/metrics",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "metadata",
+                "metrics"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Branch summary BR003",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"BR003 with KPIs and products\", () => {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.branch_code).to.eql(\"BR003\");",
+                  "    pm.expect(b.kpis).to.have.property(\"approval_rate\");",
+                  "    pm.expect(b.by_product).to.be.an(\"array\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/branches/BR003/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "branches",
+                "BR003",
+                "summary"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Exceptions for rule CUS-04, first page",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"paged, customer keys hashed, no payload\", () => {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.total).to.be.a(\"number\");",
+                  "    pm.expect(b.items.length).to.be.at.most(5);",
+                  "    b.items.forEach(i => {",
+                  "        pm.expect(i).to.not.have.property(\"record_payload\");",
+                  "        if (i.entity === \"customers\") pm.expect(i.record_key).to.match(/^[0-9a-f]{16}$/);",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/exceptions?rule_id=CUS-04&limit=5",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "exceptions"
+              ],
+              "query": [
+                {
+                  "key": "rule_id",
+                  "value": "CUS-04"
+                },
+                {
+                  "key": "limit",
+                  "value": "5"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Connected exposure LA000225",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"household members and their applications\", () => {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.application_id).to.eql(\"LA000225\");",
+                  "    pm.expect(b.members).to.be.above(0);",
+                  "    pm.expect(b.applications.length).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/graph/applications/LA000225/connected-exposure",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "graph",
+                "applications",
+                "LA000225",
+                "connected-exposure"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Errors",
+      "description": "Bad input and unknown items, in the agreed error format.",
+      "item": [
+        {
+          "name": "Unknown metric -> 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"error format: validation_error\", () => {",
+                  "    const e = pm.response.json().error;",
+                  "    pm.expect(e.code).to.eql(\"validation_error\");",
+                  "    pm.expect(e).to.have.all.keys(\"code\", \"message\", \"correlation_id\", \"details\");",
+                  "    pm.expect(e.correlation_id).to.eql(pm.response.headers.get(\"X-Correlation-ID\"));",
+                  "});",
+                  "pm.test(\"details name the field\", () => pm.expect(pm.response.json().error.details[0].field).to.eql(\"metric\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/query",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analytics",
+                "query"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"metric\": \"profit\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Grouping on DTI band share -> 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"error format: validation_error\", () => {",
+                  "    const e = pm.response.json().error;",
+                  "    pm.expect(e.code).to.eql(\"validation_error\");",
+                  "    pm.expect(e).to.have.all.keys(\"code\", \"message\", \"correlation_id\", \"details\");",
+                  "    pm.expect(e.correlation_id).to.eql(pm.response.headers.get(\"X-Correlation-ID\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/query",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "analytics",
+                "query"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"metric\": \"dti_band_share\",\n  \"group_by\": \"branch\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Malformed branch code -> 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"error format: validation_error\", () => {",
+                  "    const e = pm.response.json().error;",
+                  "    pm.expect(e.code).to.eql(\"validation_error\");",
+                  "    pm.expect(e).to.have.all.keys(\"code\", \"message\", \"correlation_id\", \"details\");",
+                  "    pm.expect(e.correlation_id).to.eql(pm.response.headers.get(\"X-Correlation-ID\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/branches/athens/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "branches",
+                "athens",
+                "summary"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Unknown branch -> 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"error format: not_found\", () => {",
+                  "    const e = pm.response.json().error;",
+                  "    pm.expect(e.code).to.eql(\"not_found\");",
+                  "    pm.expect(e).to.have.all.keys(\"code\", \"message\", \"correlation_id\", \"details\");",
+                  "    pm.expect(e.correlation_id).to.eql(pm.response.headers.get(\"X-Correlation-ID\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/branches/BR099/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "branches",
+                "BR099",
+                "summary"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Unknown application -> 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"error format: not_found\", () => {",
+                  "    const e = pm.response.json().error;",
+                  "    pm.expect(e.code).to.eql(\"not_found\");",
+                  "    pm.expect(e).to.have.all.keys(\"code\", \"message\", \"correlation_id\", \"details\");",
+                  "    pm.expect(e.correlation_id).to.eql(pm.response.headers.get(\"X-Correlation-ID\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/graph/applications/LA999999/connected-exposure",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "graph",
+                "applications",
+                "LA999999",
+                "connected-exposure"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Unknown route -> 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"error format: not_found\", () => {",
+                  "    const e = pm.response.json().error;",
+                  "    pm.expect(e.code).to.eql(\"not_found\");",
+                  "    pm.expect(e).to.have.all.keys(\"code\", \"message\", \"correlation_id\", \"details\");",
+                  "    pm.expect(e.correlation_id).to.eql(pm.response.headers.get(\"X-Correlation-ID\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/nope",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "nope"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Assistant",
+      "description": "Needs AZURE_OPENAI_*; answers 503 assistant_unavailable until then.",
+      "item": [
+        {
+          "name": "KPI question",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"structured answer\", () => {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.answer).to.be.a(\"string\").and.not.empty;",
+                  "    pm.expect(b).to.include.keys(\"evidence\", \"source\", \"limitations\", \"trace_id\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/assistant/query",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "assistant",
+                "query"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"What is the approval rate for 2025?\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Breakdown question",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"structured answer\", () => {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.answer).to.be.a(\"string\").and.not.empty;",
+                  "    pm.expect(b).to.include.keys(\"evidence\", \"source\", \"limitations\", \"trace_id\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/assistant/query",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "assistant",
+                "query"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"Show the 30-day delinquency rate by branch.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Action request is refused",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"structured answer\", () => {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.answer).to.be.a(\"string\").and.not.empty;",
+                  "    pm.expect(b).to.include.keys(\"evidence\", \"source\", \"limitations\", \"trace_id\");",
+                  "});",
+                  "pm.test(\"no figures for an action request\", () => pm.expect(pm.response.json().evidence).to.be.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/assistant/query",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "assistant",
+                "query"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"Delete all rejected applications.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
