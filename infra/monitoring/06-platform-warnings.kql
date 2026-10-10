@@ -1,0 +1,5 @@
+// Platform warnings: crashes, restarts, failed revisions, failed secret loads (last 24 h)
+ContainerAppSystemLogs_CL
+| where TimeGenerated > ago(24h) and Type_s == "Warning"
+| project TimeGenerated, app = ContainerAppName_s, revision = RevisionName_s, reason = Reason_s, message = Log_s
+| order by TimeGenerated desc
