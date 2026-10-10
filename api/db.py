@@ -34,6 +34,15 @@ def _plain(value):
 
 def run_query(settings: Settings, query: str, params: dict | None = None) -> list[dict]:
     """Run one parameterised query (values as :name) and return the rows as dicts."""
+    # Without a token the connector falls back to interactive browser OAuth and opens a login tab
+    # per query. A server must never do that: fail fast with 503 instead.
+    missing = [name for name, value in (
+        ("DATABRICKS_HOST", settings.databricks_host),
+        ("DATABRICKS_WAREHOUSE_ID", settings.databricks_warehouse_id),
+        ("DATABRICKS_TOKEN", settings.databricks_token.get_secret_value()),
+    ) if not value]
+    if missing:
+        raise DataUnavailable(f"Databricks is not configured: {', '.join(missing)} not set")
     try:
         with sql.connect(
             server_hostname=settings.databricks_host,

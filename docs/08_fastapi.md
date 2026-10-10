@@ -238,10 +238,38 @@ it answers 503 `assistant_unavailable`.
 
 Before every push: `uv run ruff check . && uv run pytest -q`.
 
+## Frontend
+
+A dashboard is served by the same app at **`/app`** (and `/` redirects there). It lives in
+[`api/static/`](../api/static): plain HTML, CSS and JavaScript, with no build step, no new
+dependencies and no CDN. It ships in the same container, so every deploy updates it.
+
+| Page | What it shows | Calls |
+|---|---|---|
+| Overview | 8 KPI tiles, applications per year (per month inside one year), DTI bands, a by-branch table; period and branch filters | `POST /analytics/query` |
+| Assistant | chat with the assistant: answer, evidence, filters, sources and limitations; refusals are marked | `POST /assistant/query` |
+| Branches | one branch's KPIs against the portfolio, the application funnel, applications/approval/delinquency by product, its data-quality exception count | `GET /branches/{code}/summary`, `POST /analytics/query`, `GET /exceptions` |
+| Data quality | totals (rejected, flagged), filters by action, rule, branch and batch, paged table | `GET /exceptions` |
+| Exposure graph | household outstanding, connected customers and applications, the graph path and a customer → application tree | `GET /graph/applications/{id}/connected-exposure` |
+| Status | service version and environment, warehouse reachability and data freshness | `GET /health`, `GET /ready` |
+
+- **Credential.** The page holds no data and loads without a key. On first use it asks for a credential: the API key on local and dev, or an Entra ID bearer token on prod. It sends it on every call as `X-API-Key` or `Authorization: Bearer`. The credential is kept in `sessionStorage`, so it is forgotten when the tab closes, and the page never writes it anywhere else. A 401 reopens the dialog.
+- **Errors** appear in the agreed format, with the code and correlation ID. While `AZURE_OPENAI_*` is not set, the Assistant shows "not available on this environment", and the other pages keep working.
+- **Formatting** happens only in the browser (ratios as %, EUR amounts, dates); the API returns raw values.
+- **Rates are never averaged in the browser.** The by-branch table and the funnel use the API's own grouped values and numerators/denominators.
+- **Data is inserted with `textContent`**, never as HTML.
+- **Not shown, because the API does not expose it:**
+  - open-installment ageing
+  - risk-band mix per branch
+  - per-rule exception counts
+  - a product filter (the API can group by product, not filter)
+  - the assistant's step-by-step trace (only its `trace_id` is returned)
+- **Tests:** `tests/api/test_frontend.py` checks that the page is served without a key, that `/` redirects to it, that it does not open the data routes, and that it stays out of the OpenAPI schema.
+
 ## Test evidence
 
 **pytest** (`uv run pytest -q`, also run by CI on every push, with results uploaded as `test-results.xml`):
-**219 passed** (128 API tests, 90 LLM-assistant tests, 1 health test).
+**207 passed** (132 API tests, 74 LLM-assistant tests, 1 health test).
 
 | File | Tests | Covers |
 |---|---|---|
@@ -256,6 +284,7 @@ Before every push: `uv run ruff check . && uv run pytest -q`.
 | `test_errors.py` | 7 | the error format for 404, 405, 422, 500 and 503; no stack trace |
 | `test_correlation.py` | 7 | ID in and out on 200/401/404/500/503, unsafe IDs replaced, JSON logs without secrets |
 | `test_db.py` | 7 | capped retries and timeout; connector failure → 503 through the real repository |
+| `test_frontend.py` | 4 | `/app` served without a key, `/` redirects, data routes stay protected, not in OpenAPI |
 
 **Newman** (from [`postman/README.md`](../postman/README.md)):
 
