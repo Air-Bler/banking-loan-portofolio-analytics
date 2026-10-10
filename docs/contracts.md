@@ -17,8 +17,8 @@ Locally they come from `.env` (git-ignored); on dev and prod from Key Vault.
 | `DATABRICKS_TOKEN` | personal access tokens are disabled in the workspace: use an Entra token locally (see below) |
 | `DATABRICKS_CATALOG` | `data2026acc123456` |
 | `DATABRICKS_SCHEMA` | **`team2`** (not `loans`) |
-| `AUTH_TENANT_ID` | Entra tenant that issues the JWTs (from the cloud person) |
-| `AUTH_AUDIENCE` | the API's app registration ID (from the cloud person) |
+| `AUTH_TENANT_ID` | Entra tenant that issues the JWTs (prod; from the cloud person) |
+| `AUTH_AUDIENCE` | the API app registration's client ID (prod; from the cloud person) |
 | `AZURE_OPENAI_*` | owned by the LLM pair |
 
 Local Databricks token (lasts about an hour; `az login` once first):
@@ -28,6 +28,20 @@ for /f "delims=" %i in ('az account get-access-token --resource 2ff814a6-3304-4a
 ```
 
 Check the connection with `uv run --env-file .env python scripts/check_db.py`.
+
+### Authentication (`api/security.py`)
+
+Every route except `/health` needs one of these; anything else is a 401 `unauthorized`.
+
+| `APP_ENV` | Callers send | Checked against |
+|---|---|---|
+| `local`, `dev` | `X-API-Key: <key>` | one of `API_KEYS` (constant-time compare) |
+| `prod` | `Authorization: Bearer <Entra ID access token>` | the tenant's published keys (`RS256` only), issuer `https://login.microsoftonline.com/<AUTH_TENANT_ID>/v2.0`, audience `<AUTH_AUDIENCE>` or `api://<AUTH_AUDIENCE>`, expiry (60 s leeway) |
+
+Prod expects v2 access tokens: the app registration has `requestedAccessTokenVersion: 2`, exposes
+`api://<client-id>`, and clients ask for the scope `api://<client-id>/.default`. If `AUTH_TENANT_ID`
+or `AUTH_AUDIENCE` is empty, prod rejects every request (fails closed). An API key is never accepted
+on prod. Keys and tokens are never logged.
 
 ## 2. Gold tables the API reads
 

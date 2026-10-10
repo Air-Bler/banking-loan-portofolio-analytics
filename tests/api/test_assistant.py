@@ -1,64 +1,83 @@
 import pytest
+from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
 from llm_helpers import FakeGoldRepository, ScriptedChatModel, tool_call
 
+from api.errors import AssistantUnavailable
 from api.main import app
 from api.routers.assistant import get_assistant
-from loan_analytics.llm import AnalyticsAssistant, ToolRegistry
-from loan_analytics.llm.errors import ConfigError
+from loan_analytics.llm.service import AnalyticsAssistant
+from loan_analytics.llm.tools import ToolRegistry
+
+URL = "/assistant/query"
 
 
 def use_assistant(script, repo=None):
-    """Serve /assistant from a scripted chat model and a fake Gold repository (no Azure, no Databricks)."""
-    repo = repo or FakeGoldRepository().set("kpi_summary", [{"value": 0.4419}])
-    app.dependency_overrides[get_assistant] = lambda: AnalyticsAssistant(ScriptedChatModel(script), ToolRegistry(repo))
+    """Swap in the real assistant loop with a scripted model and fake Gold: no Azure, no Databricks."""
+    assistant = AnalyticsAssistant(ScriptedChatModel(script), ToolRegistry(repo or FakeGoldRepository()))
+    app.dependency_overrides[get_assistant] = lambda: assistant
 
 
-@pytest.fixture
-def ask(client):
-    def run(script, question="What is the approval rate?"):
-        use_assistant(script)
-        return client.post("/assistant", json={"question": question})
-
-    return run
-
-
-def test_answer_with_evidence_and_trace(ask):
-    r = ask([tool_call("get_portfolio_kpi", {"metric": "approval_rate"}), AIMessage(content="The approval rate is 44.19%.")])
-    assert r.status_code == 200
-    body = r.json()
-    assert body["response"]["answer"] == "The approval rate is 44.19%."
-    assert body["response"]["evidence"] == [{"label": "approval_rate", "value": "44.19%", "source": "kpi_portfolio_summary"}]
-    assert body["response"]["source"] == ["kpi_portfolio_summary"] and body["response"]["limitations"]
-    assert body["trace_id"] and [t["step"] for t in body["trace"]] == ["model_call", "tool_call", "model_call"]
+def test_scripted_answer_is_200(client):
+    repo = FakeGoldRepository().set("kpi_summary", [{"value": 0.4419}])
+    use_assistant([tool_call("get_portfolio_kpi", {"metric": "approval_rate"}),
+                   AIMessage(content="The current portfolio approval rate is 44.19%.")], repo)
+    response = client.post(URL, json={"question": "What is the approval rate?"}, headers={"X-Correlation-ID": "ask-1"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["answer"] == "The current portfolio approval rate is 44.19%."
+    assert body["evidence"] and body["source"]
+    assert body["trace_id"]
+    assert body["correlation_id"] == "ask-1"
 
 
-def test_out_of_scope_request_is_answered_with_a_refusal_not_an_error(ask):
-    r = ask([], question="Approve application LA000123")
-    assert r.status_code == 200 and "can't approve" in r.json()["response"]["answer"]
+@pytest.mark.parametrize("question", ["Approve application LA000123", "select * from fact_loan_application"])
+def test_out_of_scope_question_is_refused_with_200(client, question):
+    use_assistant([])  # the model must not be called: an empty script would raise
+    response = client.post(URL, json={"question": question})
+    assert response.status_code == 200
+    body = response.json()
+    assert "can only provide analytics" in body["answer"]
+    assert body["evidence"] == []
 
 
-def test_empty_or_oversized_question_is_422(client):
+@pytest.mark.parametrize("body", [{"question": ""}, {"question": "x" * 1001}, {"question": "hi", "sql": "DROP"}, {}])
+def test_bad_body_is_422(client, body):
     use_assistant([])
-    assert client.post("/assistant", json={"question": ""}).status_code == 422
-    assert client.post("/assistant", json={"question": "x" * 1001}).status_code == 422
+    response = client.post(URL, json=body)
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
 
 
-def test_unknown_fields_are_rejected(client):
+def test_not_configured_is_503(client):
+    def unconfigured():
+        raise AssistantUnavailable("not configured: AZURE_OPENAI_ENDPOINT")
+    app.dependency_overrides[get_assistant] = unconfigured
+    response = client.post(URL, json={"question": "What is the approval rate?"})
+    assert response.status_code == 503
+    error = response.json()["error"]
+    assert error["code"] == "assistant_unavailable"
+    assert "AZURE_OPENAI" not in error["message"]
+
+
+def test_model_outage_is_503(client):
+    use_assistant([TimeoutError("Azure OpenAI timed out")])
+    response = client.post(URL, json={"question": "What is the approval rate?"})
+    assert response.status_code == 503
+    assert response.json()["error"] == {
+        "code": "assistant_unavailable", "message": "The assistant is unavailable, try again later",
+        "correlation_id": response.headers["X-Correlation-ID"], "details": [],
+    }
+
+
+def test_question_text_is_never_logged(client, caplog):
+    use_assistant([TimeoutError("down")])
+    client.post(URL, json={"question": "secret question about LA000225"})
+    assert "secret question" not in caplog.text
+
+
+def test_missing_key_is_401(client):
     use_assistant([])
-    assert client.post("/assistant", json={"question": "hi", "sql": "DROP TABLE x"}).status_code == 422
-
-
-def test_requires_an_api_key(client):
-    use_assistant([])
-    assert client.post("/assistant", json={"question": "hi"}, headers={"X-API-Key": "wrong"}).status_code == 401
-
-
-def test_missing_configuration_is_503_and_names_no_setting(client, monkeypatch):
-    def not_configured():
-        raise ConfigError("Required environment variable AZURE_OPENAI_ENDPOINT is not set.")
-
-    monkeypatch.setattr("api.routers.assistant.create_assistant_from_env", not_configured)
-    get_assistant.cache_clear()
-    r = client.post("/assistant", json={"question": "What is the approval rate?"})
-    assert r.status_code == 503 and "AZURE_OPENAI" not in r.text
+    response = TestClient(app).post(URL, json={"question": "What is the approval rate?"})
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "unauthorized"

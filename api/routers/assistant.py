@@ -1,42 +1,63 @@
+"""POST /assistant/query: the LLM pair's AnalyticsAssistant behind the API's auth, errors and correlation ID."""
+
 import logging
 from functools import lru_cache
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from loan_analytics.llm import AnalyticsAssistant, AnalyticsResponse, TraceEntry, create_assistant_from_env
+from api.errors import AssistantUnavailable
 from loan_analytics.llm.errors import ConfigError
+from loan_analytics.llm.models import AnalyticsResponse as AssistantAnswer
+from loan_analytics.llm.service import AnalyticsAssistant, create_assistant_from_env
 
 log = logging.getLogger("api.assistant")
 router = APIRouter(tags=["assistant"])
 
 
-class AssistantRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"examples": [{"question": "What is the approval rate for risk band D?"}]})
+class AssistantQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
-    question: str = Field(min_length=1, max_length=1000)
+    question: str = Field(min_length=1, max_length=1000, examples=["What is the approval rate by branch in 2025?"])
 
 
-class AssistantReply(BaseModel):
-    """The structured answer plus the audit trail of how it was produced."""
+class AssistantResponse(AssistantAnswer):
+    """The assistant's structured answer (answer, evidence, filters, source, measure, limitations) plus IDs."""
 
-    response: AnalyticsResponse
     trace_id: str
-    trace: list[TraceEntry]
+    correlation_id: str | None = None
 
 
 @lru_cache
+def _build_assistant() -> AnalyticsAssistant:
+    # lru_cache never stores an exception, so a ConfigError is retried on the next request.
+    return create_assistant_from_env()
+
+
 def get_assistant() -> AnalyticsAssistant:
-    """One assistant (graph + Azure OpenAI client + Gold repository) per process; tests swap in a fake."""
+    """FastAPI dependency; tests swap in an assistant with a scripted model and a fake repository."""
     try:
-        return create_assistant_from_env()
-    except ConfigError as exc:   # the message names the missing setting (never its value): log it, do not return it
-        log.error("assistant not configured: %s", exc.message)
-        raise HTTPException(status_code=503, detail="The assistant is not configured") from exc
+        return _build_assistant()
+    except ConfigError as exc:
+        # ConfigError names the missing setting, never its value.
+        raise AssistantUnavailable(f"not configured: {exc.message}") from exc
 
 
-@router.post("/assistant", response_model=AssistantReply)
-def ask_assistant(body: AssistantRequest, assistant: AnalyticsAssistant = Depends(get_assistant)) -> AssistantReply:
-    """Answer a portfolio question from approved Gold tools only. Sync on purpose: the LLM and warehouse calls block."""
-    result = assistant.ask(body.question)
-    return AssistantReply(response=result.response, trace_id=result.trace_id, trace=result.trace)
+@router.post("/assistant/query", response_model=AssistantResponse)
+def query_assistant(
+    body: AssistantQuery, request: Request, assistant: AnalyticsAssistant = Depends(get_assistant)
+) -> dict:
+    """Ask the analytics assistant a question about the loan portfolio."""
+    try:
+        result = assistant.ask(body.question)
+    except Exception as exc:
+        raise AssistantUnavailable(f"ask failed: {type(exc).__name__}") from exc
+    # ask() catches a failed model call itself and answers "unavailable"; the API reports that as 503.
+    failed = next((t for t in result.trace if t.step == "model_call" and t.status == "error"), None)
+    if failed:
+        raise AssistantUnavailable(f"model call failed: {failed.error_category}")
+    return {
+        **result.response.model_dump(),
+        "trace_id": result.trace_id,
+        "correlation_id": request.state.correlation_id,
+    }

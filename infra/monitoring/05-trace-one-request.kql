@@ -1,0 +1,6 @@
+// Every log line for one request: replace the ID with the correlation_id from an error response
+let id = "PASTE_CORRELATION_ID";
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(7d) and Log_s has id
+| project TimeGenerated, app = ContainerAppName_s, revision = RevisionName_s, Log_s
+| order by TimeGenerated asc
