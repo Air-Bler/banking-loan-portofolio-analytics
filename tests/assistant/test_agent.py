@@ -37,6 +37,17 @@ def test_happy_path_follows_the_message_protocol():
     assert out.tool_rounds == 1
 
 
+def test_log_has_each_tool_with_its_arguments_but_never_the_question(caplog):
+    caplog.set_level("INFO", logger="api.assistant")
+    llm = ScriptedLLM(responses=[call("get_portfolio_kpi", KPI), *final("answered", GOOD)])
+    answer("secret question: approval rate by branch?", FakeRepository(), llm)
+
+    record = next(r for r in caplog.records if r.getMessage() == "assistant answer")
+    assert record.fields["steps"] == [{"round": 1, "tool": "get_portfolio_kpi", "arguments": KPI, "status": "success"}]
+    assert record.fields["status"] == "answered" and record.fields["tool_rounds"] == 1
+    assert "secret question" not in caplog.text and "secret question" not in str(record.fields)
+
+
 def test_invented_number_is_replaced_by_the_raw_results():
     llm = ScriptedLLM(responses=[call("get_portfolio_kpi", KPI), *final("answered", "71% of 500 were approved.")])
     out = answer("Approval rate by branch?", FakeRepository(), llm)
