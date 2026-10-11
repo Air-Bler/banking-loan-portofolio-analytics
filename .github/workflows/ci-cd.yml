@@ -83,8 +83,35 @@ jobs:
           done
           exit 1
 
-  approve-prod:
+  api-tests:
     needs: deploy-dev
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Postman tests against dev (Newman)
+        run: |
+          URL="https://$(az containerapp show -g "$RG" -n ca-loant2gk-dev --query properties.configuration.ingress.fqdn -o tsv)"
+          KEY=$(az keyvault secret show --vault-name kv-loant2gk -n api-keys-dev --query value -o tsv)
+          echo "::add-mask::$KEY"
+          npx -y newman@6 run postman/loan-api.postman_collection.json \
+            --env-var "baseUrl=$URL" --env-var "apiKey=$KEY" \
+            --reporters cli,junit --reporter-junit-export newman-results.xml
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: newman-results
+          path: newman-results.xml
+
+  approve-prod:
+    needs: api-tests
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
