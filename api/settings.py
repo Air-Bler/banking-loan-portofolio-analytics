@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     auth_tenant_id: str = ""
     auth_audience: str = ""
 
+    # The assistant's model (api/assistant/llm.py). Empty means not configured: /assistant/query answers 503.
+    azure_openai_endpoint: str = ""
+    azure_openai_api_key: SecretStr = SecretStr("")
+    azure_openai_deployment: str = ""
+    azure_openai_api_version: str = "2024-10-21"  # GA version with tool calling; set only to override
+
     @property
     def databricks_http_path(self) -> str:
         return f"/sql/1.0/warehouses/{self.databricks_warehouse_id}"

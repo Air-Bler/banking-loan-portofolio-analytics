@@ -19,7 +19,7 @@ Locally they come from `.env` (git-ignored); on dev and prod from Key Vault.
 | `DATABRICKS_SCHEMA` | **`team2`** (not `loans`) |
 | `AUTH_TENANT_ID` | Entra tenant that issues the JWTs (prod; from the cloud person) |
 | `AUTH_AUDIENCE` | the API app registration's client ID (prod; from the cloud person) |
-| `AZURE_OPENAI_*` | owned by the LLM pair |
+| `AZURE_OPENAI_*` | owned by the LLM pair (see section 6) |
 
 Local Databricks token (lasts about an hour; `az login` once first):
 
@@ -90,6 +90,10 @@ Rules:
 (`src/loan_analytics/llm/repository.py`, `execute(ApprovedQuery)` through the Databricks SDK).
 Do we keep both, or do the assistant tools call `api/queries.py`?
 
+**Answer (LLM pair):** the assistant tools call `api/queries.py` only. The new assistant lives in
+`api/assistant/` and writes no SQL; the legacy `src/loan_analytics/llm/` is removed once
+`/assistant/query` calls the new assistant (section 6).
+
 ## 4. Analytics request and response (values illustrative)
 
 ```json
@@ -129,3 +133,96 @@ ISO 8601 UTC. Formatting is the frontend's job.
 | 503 | `data_unavailable` | Databricks down or timed out |
 | 503 | `assistant_unavailable` | the assistant isn't wired in or Azure OpenAI is down |
 | 500 | `internal_error` | anything unexpected; logged with the correlation ID, no stack trace in the response |
+
+## 6. Assistant (`api/assistant/`, owned by the LLM pair)
+
+The assistant answers portfolio questions in plain language, using only numbers that its tools read
+through the query module (section 3). It writes no SQL and never reads Bronze or Silver.
+
+### Entry point
+
+```python
+# api/assistant/__init__.py
+def answer(question: str, repo: GoldRepository, llm: BaseChatModel) -> AssistantAnswer: ...
+# raises DataUnavailable (Databricks down) or AssistantUnavailable (Azure OpenAI down)
+
+# api/assistant/llm.py
+def get_llm(settings: Settings = Depends(get_settings)) -> BaseChatModel: ...
+# FastAPI dependency; raises AssistantUnavailable if an AZURE_OPENAI_* setting is missing
+```
+
+The route passes the repository and the model as dependencies, so tests swap in `FakeRepository`
+and a scripted model: no Azure and no Databricks in CI.
+
+### Tools (read-only, each calls one `GoldRepository` method)
+
+| Tool | Calls |
+|---|---|
+| `get_portfolio_kpi` | `query_metric` (the 9 metrics, grouped by branch, product, month or year) |
+| `get_dq_exceptions` | `get_exceptions` |
+| `get_metadata` | `metric_catalogue` and `refresh_info` |
+| `get_connected_exposure` | `connected_exposure` |
+
+### Response (values illustrative)
+
+```json
+POST /assistant/query
+{"question": "What was the approval rate by branch in 2025?"}
+```
+
+```json
+200 OK
+{"status": "answered",
+ "answer": "BR003 approved 59.2% of decided applications in 2025 (244 of 412).",
+ "evidence": [{"tool": "get_portfolio_kpi",
+               "arguments": {"metric": "approval_rate", "group_by": "branch",
+                             "date_from": "2025-01-01", "date_to": "2025-12-31", "limit": 20},
+               "source": "gold.kpi_portfolio_monthly", "as_of_date": "2025-12-31",
+               "result": {"rows": [{"group": "BR003", "value": 0.5921, "numerator": 244, "denominator": 412}]}}],
+ "filters": {"metric": "approval_rate", "group_by": "branch", "date_from": "2025-01-01", "date_to": "2025-12-31"},
+ "sources": ["gold.kpi_portfolio_monthly"],
+ "measures": ["approval_rate"],
+ "limitations": [],
+ "trace": [{"round": 1, "tool": "get_portfolio_kpi",
+            "arguments": {"metric": "approval_rate", "group_by": "branch",
+                          "date_from": "2025-01-01", "date_to": "2025-12-31"},
+            "status": "success"}],
+ "model": "gpt-4o-mini",
+ "tool_rounds": 1,
+ "correlation_id": "6f1c2a9e"}
+```
+
+Only `status`, `answer` and `limitations` come from the model. `evidence`, `filters`, `sources`,
+`measures` and `trace` are built by code from the tool calls that actually ran; `trace` also lists
+failed calls. Every number in `answer` is checked against the tool results: if one is not found,
+the answer is replaced by the raw results and a limitation says why. `correlation_id` is added by
+the route.
+
+| `status` | When |
+|---|---|
+| `answered` | the tools returned data and the answer uses it |
+| `refused` | an action, raw SQL, personal data, prompt injection or an off-topic question; refused before the model is called when the code can tell |
+| `no_data` | the tools returned nothing usable (unknown ID, empty filter, Databricks down during a tool call), or the model answered without any data |
+| `incomplete` | the model was still asking for tools after 3 rounds |
+
+Failures that are not an answer use the error format of section 5: `503 data_unavailable` when
+Databricks is down before the model is asked, `503 assistant_unavailable` when an `AZURE_OPENAI_*`
+setting is missing or Azure OpenAI still fails after the client's retries.
+
+### Settings
+
+| Variable | Value or use |
+|---|---|
+| `AZURE_OPENAI_ENDPOINT` | the Azure OpenAI resource, e.g. `https://oai-loant2gk.openai.azure.com/` |
+| `AZURE_OPENAI_DEPLOYMENT` | the model deployment name, e.g. `gpt-4o-mini` |
+| `AZURE_OPENAI_API_KEY` | secret: `.env` locally, Key Vault secret `azure-openai-api-key` on dev and prod |
+| `AZURE_OPENAI_API_VERSION` | optional; default `2024-10-21` |
+
+The client runs with `temperature=0`, a 30-second timeout and 2 retries (429 and 5xx, with backoff).
+
+### Current state
+
+The API route `/assistant/query` (`api/routers/assistant.py`) still calls the legacy assistant in
+`src/loan_analytics/llm/` and returns its older shape (`source`, `measure`, `trace_id`). The next
+step switches that route to `answer()` and updates `tests/api/test_assistant.py` and the Postman
+requests; the legacy package is removed after that.
