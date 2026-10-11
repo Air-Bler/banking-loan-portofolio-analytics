@@ -345,12 +345,13 @@ const SUGGESTIONS = [
   "What was the approval rate by branch in 2025?",
   "Which product has the highest outstanding balance?",
   "Show the 30-day delinquency rate by month for 2025.",
-  "What risk bands are there?",
+  "What is the connected exposure for application LA000225?",
 ];
 const TOOLS = [
-  ["get_portfolio_kpi", "One headline KPI for the whole portfolio"],
-  ["get_portfolio_breakdown", "A KPI filtered or grouped by branch, product, segment, risk band or month"],
-  ["get_metadata", "Reference values: products, branches, risk bands, date range"],
+  ["get_portfolio_kpi", "One KPI for the whole portfolio or by branch, product, month or year, optionally for a date range"],
+  ["get_dq_exceptions", "Records flagged or rejected by the data-quality rules"],
+  ["get_metadata", "The available KPIs, their definitions and how recent the data is"],
+  ["get_connected_exposure", "The household around one application and its total outstanding balance"],
 ];
 
 function pageAssistant() {
@@ -410,29 +411,81 @@ function renderTurn(turn) {
       el("div", { class: "meta" }, el("span", { class: "badge unavailable" }, "Unavailable"), secs),
       el("div", { class: "section" }, errorBox(turn.error)))];
   }
-  const r = turn.result;
-  const refused = r.limitations.some((l) => l.startsWith("Out of scope"));
-  const status = refused ? ["refused", "Refused", "Stopped by the guardrail before the model was called"]
-    : r.evidence.length ? ["answered", "Answered", `${secs} · ${r.evidence.length} figure${r.evidence.length === 1 ? "" : "s"} from Gold`]
-    : ["nodata", "No data", secs];
-  const filterTags = Object.entries(r.filters || {}).map(([k, v]) => el("span", { class: "tag" }, `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`));
+  const r = turn.result; // the AssistantAnswer of docs/contracts.md section 6, plus correlation_id
+  const calls = `${r.evidence.length} tool call${r.evidence.length === 1 ? "" : "s"}`;
+  const asOf = r.evidence[0]?.as_of_date;
+  const status = {
+    answered: ["answered", "Answered", [secs, calls, asOf ? `data as of ${fmtDate(asOf)}` : null].filter(Boolean).join(" · ")],
+    refused: ["refused", "Refused", "Outside what the assistant can do"],
+    no_data: ["nodata", "No data", secs],
+    incomplete: ["incomplete", "Incomplete", `${secs} · stopped before a full answer`],
+  }[r.status] || ["nodata", "No data", secs];
+  // With several tool calls the filters come per call ({"get_portfolio_kpi#1": {...}}): show them as plain tags too.
+  const filterPairs = Object.entries(r.filters || {}).flatMap(([k, v]) => (v && typeof v === "object" ? Object.entries(v) : [[k, v]]));
+  const filterTags = [...new Set(filterPairs.map(([k, v]) => `${k}: ${v}`))].map((t) => el("span", { class: "tag" }, t));
+  const rounds = `${r.tool_rounds} tool round${r.tool_rounds === 1 ? "" : "s"}`;
 
   return [bubble, el("div", { class: "card answer-card" },
     el("div", { class: "meta" }, el("span", { class: `badge ${status[0]}` }, status[1]), status[2]),
     el("p", { class: "answer-text" }, r.answer),
-    r.evidence.length ? el("div", { class: "evidence" },
-      el("div", { class: "evidence-head" }, el("span", {}, "Evidence", r.measure ? ` · ${r.measure}` : ""),
-        el("span", { class: "mono muted" }, r.source.join(" · "))),
-      table([
-        { label: "Figure", key: "label" },
-        { label: "Value", num: true, render: (e) => (typeof e.value === "number" ? nf.format(e.value) : e.value) },
-        { label: "Source", cls: "mono", key: "source" },
-      ], r.evidence)) : null,
+    r.evidence.map(evidenceBlock),
     el("div", { class: "answer-facts" },
       el("div", {}, el("h3", {}, "Filters applied"), filterTags.length ? filterTags : el("span", { class: "muted" }, "None")),
-      el("div", {}, el("h3", {}, "Source"), r.source.length ? r.source.map((s) => el("div", { class: "mono" }, s)) : el("span", { class: "muted" }, "No tool was run")),
+      el("div", {}, el("h3", {}, "Source"), r.sources.length ? r.sources.map((s) => el("div", { class: "mono" }, s)) : el("span", { class: "muted" }, "No tool was run")),
       el("div", {}, el("h3", {}, "Limitations"), r.limitations.length ? el("ul", {}, r.limitations.map((l) => el("li", {}, l))) : el("span", { class: "muted" }, "None"))),
-    el("div", { class: "trace" }, `trace ${r.trace_id} · correlation id ${r.correlation_id}`))];
+    el("div", { class: "trace" }, [`correlation id ${r.correlation_id || "–"}`, r.model, rounds].filter(Boolean).join(" · ")))];
+}
+
+// One box per tool call that returned data: what was read, from which Gold table, and how recent it is.
+function evidenceBlock(e) {
+  const [title, body] = evidenceContent(e.tool, e.result || {});
+  return el("div", { class: "evidence" },
+    el("div", { class: "evidence-head" }, el("span", {}, `Evidence · ${title}`),
+      el("span", { class: "mono muted" }, [e.tool, e.source, e.as_of_date ? `as of ${fmtDate(e.as_of_date)}` : null].filter(Boolean).join(" · "))),
+    body);
+}
+
+// The tool's raw result as a title and a table, formatted like the rest of the dashboard.
+function evidenceContent(tool, res) {
+  if (tool === "get_portfolio_kpi") {
+    const unit = res.metric?.unit;
+    const group = res.group_by ? res.group_by[0].toUpperCase() + res.group_by.slice(1) : "Group";
+    return [res.metric?.label || "KPI", table([
+      { label: group, render: (row) => row.group ?? res.filters?.branch_code ?? "Whole portfolio" },
+      { label: "Value", num: true, render: (row) => fmt(row.value, unit, { compact: false }) },
+    ], res.rows || [])];
+  }
+  if (tool === "get_dq_exceptions") {
+    const items = res.items || [];
+    const total = res.total ?? items.length;
+    const count = total > items.length ? `${nf.format(total)} in total · first ${items.length} shown` : `${nf.format(total)} in total`;
+    return [`Data-quality exceptions · ${count}`, table([
+      { label: "Rule", cls: "mono", key: "rule_id" },
+      { label: "Action", key: "action" },
+      { label: "Description", key: "description" },
+      { label: "Branch", cls: "mono", key: "branch_code" },
+    ], items)];
+  }
+  if (tool === "get_connected_exposure") {
+    const summary = `${res.members} members · ${fmt(res.total_outstanding, "EUR", { compact: false })} outstanding · ${res.delinquent_loans} delinquent`;
+    return [`Connected exposure · ${summary}`, table([
+      { label: "Application", cls: "mono", key: "application_id" },
+      { label: "Customer", cls: "mono", render: (row) => nodeId(row.customer_node) },
+      { label: "Status", key: "status_code" },
+      { label: "Outstanding", num: true, render: (row) => fmt(row.outstanding_balance, "EUR", { compact: false }) },
+      { label: "30+ days late", render: (row) => (row.is_delinquent_30 ? "Yes" : "No") },
+    ], res.applications || [])];
+  }
+  if (tool === "get_metadata") {
+    return ["Available KPIs", table([
+      { label: "KPI", key: "label" },
+      { label: "Unit", key: "unit" },
+      { label: "Definition", key: "definition" },
+    ], res.metrics || [])];
+  }
+  // A tool this page doesn't know yet: show its plain values.
+  const plain = Object.entries(res).filter(([, v]) => v === null || typeof v !== "object");
+  return [tool, table([{ label: "Field", key: "k" }, { label: "Value", key: "v" }], plain.map(([k, v]) => ({ k, v })))];
 }
 
 // ---------- Branches ----------
