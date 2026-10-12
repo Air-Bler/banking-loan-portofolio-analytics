@@ -463,7 +463,22 @@ function renderTurn(turn) {
       el("div", {}, el("h3", {}, "Filters applied"), filterTags.length ? filterTags : el("span", { class: "muted" }, "None")),
       el("div", {}, el("h3", {}, "Source"), r.sources.length ? r.sources.map((s) => el("div", { class: "mono" }, s)) : el("span", { class: "muted" }, "No tool was run")),
       el("div", {}, el("h3", {}, "Limitations"), r.limitations.length ? el("ul", {}, r.limitations.map((l) => el("li", {}, l))) : el("span", { class: "muted" }, "None"))),
+    traceToggle(r.trace),
     el("div", { class: "trace" }, [`correlation id ${r.correlation_id || "–"}`, r.model, rounds].filter(Boolean).join(" · ")))];
+}
+
+// Every tool call the assistant made, failed ones included, in order: closed until the user asks for it.
+function traceToggle(trace) {
+  if (!trace?.length) return null;
+  const args = (a) => Object.entries(a || {}).map(([k, v]) => `${k} ${v}`).join(" · ") || "no arguments";
+  const steps = el("ol", { class: "muted small", hidden: true }, trace.map((s) =>
+    el("li", {}, `${s.tool} (${args(s.arguments)}) · round ${s.round} · ${s.status === "success" ? "✓" : "✗ failed"}`)));
+  const label = (open) => `${open ? "Hide" : "Show"} trace (${trace.length} step${trace.length === 1 ? "" : "s"})`;
+  const button = el("button", { class: "btn-ghost", type: "button", onclick: () => {
+    steps.hidden = !steps.hidden;
+    button.textContent = label(!steps.hidden);
+  } }, label(false));
+  return el("div", { class: "section" }, button, steps);
 }
 
 // One box per tool call that returned data: what was read, from which Gold table, and how recent it is.
@@ -481,7 +496,7 @@ function evidenceContent(tool, res) {
     const unit = res.metric?.unit;
     const group = res.group_by ? res.group_by[0].toUpperCase() + res.group_by.slice(1) : "Group";
     return [res.metric?.label || "KPI", table([
-      { label: group, render: (row) => row.group ?? res.filters?.branch_code ?? "Whole portfolio" },
+      { label: group, render: (row) => (row.group === "UNKNOWN" ? "UNKNOWN (invalid code)" : row.group ?? res.filters?.branch_code ?? "Whole portfolio") },
       { label: "Value", num: true, render: (row) => fmt(row.value, unit, { compact: false }) },
     ], res.rows || [])];
   }

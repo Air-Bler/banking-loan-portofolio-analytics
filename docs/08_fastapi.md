@@ -259,7 +259,7 @@ dependencies and no CDN. It ships in the same container, so every deploy updates
 | Page | What it shows | Calls |
 |---|---|---|
 | Overview | 8 KPI tiles, applications per year (per month inside one year), DTI bands, a by-branch table; period and branch filters | `POST /analytics/query` |
-| Assistant | chat with the assistant: a badge from `status`, the answer, one evidence box per tool call (tool, Gold table, as-of date, values), filters, sources and limitations | `POST /assistant/query` |
+| Assistant | chat with the assistant: a badge from `status`, the answer, one evidence box per tool call (tool, Gold table, as-of date, values), filters, sources and limitations, and a "Show trace" button with every tool call in order, failed ones included | `POST /assistant/query` |
 | Branches | one branch's KPIs against the portfolio, the application funnel, applications/approval/delinquency by product, its data-quality exception count | `GET /branches/{code}/summary`, `POST /analytics/query`, `GET /exceptions` |
 | Data quality | totals (rejected, flagged), filters by action, rule, branch and batch, paged table | `GET /exceptions` |
 | Exposure graph | household outstanding, connected customers and applications, the graph path and a customer → application tree | `GET /graph/applications/{id}/connected-exposure` |
@@ -278,13 +278,12 @@ dependencies and no CDN. It ships in the same container, so every deploy updates
   - risk-band mix per branch
   - per-rule exception counts
   - a product filter (the API can group by product, not filter)
-  - the assistant's step-by-step trace (returned in `trace`, not shown on the page)
 - **Tests:** `tests/api/test_frontend.py` checks that the page is served without a key, that `/` redirects to it, that it does not open the data routes, and that it stays out of the OpenAPI schema.
 
 ## Test evidence
 
 **pytest** (`uv run pytest -q`, also run by CI on every push, with results uploaded as `test-results.xml`):
-**408 passed** (137 API tests, 196 assistant tests in `tests/assistant/`, 74 tests of the legacy assistant that go
+**412 passed** (140 API tests, 197 assistant tests in `tests/assistant/`, 74 tests of the legacy assistant that go
 with `src/loan_analytics/llm/`, 1 health test).
 
 | File | Tests | Covers |
