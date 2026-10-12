@@ -210,3 +210,14 @@ def test_limits_are_capped_at_50_rows():
     for model in (KpiArgs, ExceptionArgs):
         assert model.model_fields["limit"].metadata[1].le == 50
     assert ExposureArgs.model_fields["application_id"].metadata[0].pattern == r"^LA\d{6}$"
+
+
+def test_get_metadata_is_described_for_what_can_you_do_questions():
+    tool = next(t for t in build_tools(FakeRepository()) if t.name == "get_metadata")
+    assert "what the assistant can answer" in " ".join(tool.description.split())
+
+
+def test_descriptions_tell_the_model_what_to_do_with_unknown_metrics_and_ids():
+    by_name = {t.name: " ".join(t.description.split()) for t in build_tools(FakeRepository())}
+    assert "do not compute it yourself" in by_name["get_portfolio_kpi"]
+    assert "Always call it when the user names an application ID" in by_name["get_connected_exposure"]

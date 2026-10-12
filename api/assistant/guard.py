@@ -1,7 +1,8 @@
 """Input guard: refuses what the assistant must never do, before any model call.
 
 Pure code. The prompt also tells the model to refuse, but a refusal must not depend on the model alone. Refused:
-an empty or oversized question, prompt injection, raw SQL or table access, a request to change something (approve,
+an empty, oversized or letterless question ("{}", "???"), a question about self-harm (answered with a short supportive
+message, see support_message), prompt injection, raw SQL or table access, a request to change something (approve,
 delete, update ...) and a request for personal data (phone, IBAN, names of customers ...).
 Analytical questions pass: an action verb must open a sentence and be followed by a banking object, so
 "change in approval rate", "how many applications were approved" and "Ποιο κατάστημα έχει το χαμηλότερο approval rate"
@@ -29,6 +30,33 @@ def _normalise(text: str) -> str:
 
 def _rx(pattern: str) -> re.Pattern[str]:
     return re.compile(pattern, re.DOTALL)
+
+
+# ---- self-harm ----------------------------------------------------------------------------------------------------------------
+# Azure OpenAI's content filter rejects such prompts with a 400, which used to surface as a 503. Catching them here means the
+# model is never called, and the person gets a supportive answer instead of an error.
+SELF_HARM = "self-harm"  # the reason check_question returns; the graph shows support_message(question) for it
+_SELF_HARM = _rx(
+    r"\b(?:suicid\w*|self[- ]?harm\w*|self[- ]?injur\w*|kill(?:ing)? my ?self|end(?:ing)? my (?:own )?life|take my (?:own )?life|"
+    r"hurt(?:ing)? my ?self|cut(?:ting)? my ?self|(?:want|wanna|going) to die|wish i (?:was|were) dead|better off dead|"
+    r"(?:do not|dont|don't|no longer) want to (?:live|be alive)|no reason to live|end it all)\b"
+    r"|\b(?:αυτοκτον\w*|αυτοτραυματ\w*|θελω να πεθανω|θελω να (?:με )?σκοτωσω|να σκοτωσω τον εαυτο μου|"
+    r"να τελειωσω (?:τη ζωη μου|με ολα)|δεν θελω να ζω|δεν αξιζει να ζω|να κανω κακο στον εαυτο μου)\b"
+)
+_SUPPORT_EN = (
+    "I can only answer questions about the loan portfolio. If you're going through a hard time, please talk to someone you "
+    "trust or call 1018 (suicide help line, Greece) or 112."
+)
+_SUPPORT_EL = (
+    "Μπορώ να απαντώ μόνο σε ερωτήσεις για το χαρτοφυλάκιο δανείων. Αν περνάς δύσκολες στιγμές, μίλησε σε κάποιον που "
+    "εμπιστεύεσαι ή κάλεσε το 1018 (Γραμμή Παρέμβασης για την Αυτοκτονία) ή το 112."
+)
+
+
+def support_message(question: str) -> str:
+    """The short, supportive refusal for SELF_HARM, in Greek when the question has Greek letters, else in English."""
+    greek = any("\u0370" <= c <= "\u03ff" or "\u1f00" <= c <= "\u1fff" for c in question or "")
+    return _SUPPORT_EL if greek else _SUPPORT_EN
 
 
 # ---- prompt injection -----------------------------------------------------------------------------------------------------
@@ -114,6 +142,10 @@ def check_question(question: str) -> str | None:
     text = _normalise(question or "")
     if not text:
         return "empty question"
+    if not any(c.isalpha() for c in text):  # "{}", "[]", "**", "???", "12345": nothing to answer, the model would guess
+        return "no question text"
+    if _SELF_HARM.search(text):
+        return SELF_HARM
     if _INJECTION.search(text):
         return "prompt injection"
     if _SQL.search(text):

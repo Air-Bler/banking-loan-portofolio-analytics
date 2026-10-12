@@ -106,7 +106,9 @@ def build_tools(repo) -> list[BaseTool]:
         """Read one portfolio KPI from Gold, overall or broken down by branch, product, month or year.
         Metrics: applications, requested_amount (EUR), approval_rate, avg_decision_days, high_dti_share
         (DTI of 35% or more), dti_band_share (whole portfolio only), delinquency_rate_30, outstanding_balance (EUR),
-        manual_review_rate. Rates are ratios between 0 and 1. Use for any question about a KPI."""
+        manual_review_rate. Rates are ratios between 0 and 1. Use for any question about a KPI.
+        Only these metrics exist. If the user asks for another one (rejection rate, profit ...), do not compute it
+        yourself: say it is not available and give the closest listed metric instead."""
         filters = {
             key: value
             for key, value in {"date_from": date_from, "date_to": date_to, "branch_code": branch_code}.items()
@@ -125,7 +127,8 @@ def build_tools(repo) -> list[BaseTool]:
     @tool("get_metadata", args_schema=MetadataArgs)
     def get_metadata() -> dict:
         """List the available metrics with their definitions and units, and the as-of date of the data.
-        Use for questions like which KPIs exist, how a KPI is defined, or how recent the data is."""
+        Use for questions about what the assistant can answer or do, which KPIs exist, how a KPI is defined,
+        or how recent the data is."""
         info = repo.refresh_info()
         return {
             "metrics": repo.metric_catalogue(),
@@ -137,7 +140,9 @@ def build_tools(repo) -> list[BaseTool]:
     @tool("get_connected_exposure", args_schema=ExposureArgs)
     def get_connected_exposure(application_id: str) -> dict | None:
         """Find the borrowers in the same household as the applicant of one loan application, and their total
-        outstanding exposure (knowledge graph; it holds household links only). Needs an application ID like LA000225."""
+        outstanding exposure (knowledge graph; it holds household links only). Needs an application ID like LA000225.
+        Always call it when the user names an application ID, even one that looks unusual: an unknown ID comes
+        back as "not found", and that is the answer to give."""
         return repo.connected_exposure(application_id)
 
     return [get_portfolio_kpi, get_dq_exceptions, get_metadata, get_connected_exposure]

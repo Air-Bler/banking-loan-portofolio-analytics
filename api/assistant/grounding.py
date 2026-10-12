@@ -72,8 +72,17 @@ def _is_year(token: str, readings: list[tuple[Decimal, int]], percent: bool) -> 
     return not percent and token.isdigit() and len(token) == 4 and 1900 <= int(token) <= 2100
 
 
+_SNAKE = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$")
+
+
+def _identifier_numbers(name: str, out: set[Decimal]) -> None:
+    """Numbers written in a field name or a snake_case value: is_delinquent_30 -> 30, dti_share_20_35 -> 20 and 35."""
+    if _SNAKE.match(name):
+        out.update(Decimal(part) for part in name.split("_") if part.isdigit())
+
+
 def _source_values(node: Any, out: set[Decimal]) -> None:
-    """Every number inside a tool result or its arguments, including numbers written in labels and definitions."""
+    """Every number inside a tool result or its arguments, including numbers written in labels, definitions and field names."""
     if isinstance(node, bool) or node is None:
         return
     if isinstance(node, (int, float, Decimal)):
@@ -84,13 +93,15 @@ def _source_values(node: Any, out: set[Decimal]) -> None:
         if value.is_finite():
             out.add(value)
     elif isinstance(node, dict):
-        for value in node.values():
+        for key, value in node.items():
+            _identifier_numbers(str(key), out)
             _source_values(value, out)
     elif isinstance(node, (list, tuple)):
         out.add(Decimal(len(node)))  # "3 exceptions" is a count of what was returned
         for value in node:
             _source_values(value, out)
     else:
+        _identifier_numbers(str(node), out)
         for _, readings, _ in _numbers(str(node)):
             out.update(value for value, _ in readings)
 
@@ -115,8 +126,10 @@ def ungrounded_numbers(text: str, question: str, runs: list[dict]) -> list[str]:
     for run in runs:
         _source_values(run.get("arguments"), sources)
         _source_values(run.get("result"), sources)
-    for _, readings, _ in _numbers(question):
+    for _, readings, percent in _numbers(question):
         sources.update(value for value, _ in readings)
+        if percent:  # "a target of 70%" may come back as 0.7
+            sources.update(value / 100 for value, _ in readings)
 
     bad = []
     for token, readings, percent in _numbers(text):
