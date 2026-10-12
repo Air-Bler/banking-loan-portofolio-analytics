@@ -29,6 +29,12 @@ def test_system_prompt_sets_the_guardrails():
         assert rule in system
 
 
+def test_system_prompt_sets_the_number_format_and_the_unknown_group():
+    system = PROMPT.format_messages(question="q", as_of_date="2025-12-31", metrics="m")[0].content
+    assert "percentages with one decimal" in system  # not 0.3841886269070735 in the answer
+    assert "UNKNOWN" in system and "Leave it out of rankings" in system
+
+
 def test_answer_draft_accepts_only_the_agreed_statuses():
     assert AnswerDraft(status="answered", answer="59.2%").limitations == []
     with pytest.raises(ValidationError):
