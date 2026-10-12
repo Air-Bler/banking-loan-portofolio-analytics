@@ -42,7 +42,9 @@ let useSignIn = false; // set from /health at start-up
 const apiKey = { value: store.get("apiKey") };
 let signInMessage = ""; // shown on the sign-in card after a failed or expired sign-in
 
-const connected = () => (useSignIn ? Boolean(auth.account()) : Boolean(apiKey.value));
+let signInRejected = false; // the API refused our token: show the sign-in card instead of retrying
+
+const connected = () => (useSignIn ? Boolean(auth.account()) && !signInRejected : Boolean(apiKey.value));
 
 async function authHeaders() {
   if (!useSignIn) return apiKey.value ? { "X-API-Key": apiKey.value } : {};
@@ -52,6 +54,10 @@ async function authHeaders() {
 
 function onUnauthorized(message) {
   if (!useSignIn) { askForKey(message); return; }
+  // Re-render once to show the sign-in card. Re-rendering on every 401 loops: the page calls the
+  // API again, gets another 401, re-renders, and so on.
+  if (signInRejected) return;
+  signInRejected = true;
   signInMessage = message;
   updateAuthUi();
   route();
@@ -741,7 +747,7 @@ async function pageExposure(params, token, id) {
 async function pageStatus(params, token) {
   const health = el("div", { class: "card" }, el("div", { class: "card-head" }, el("h2", {}, "Service"), el("span", { class: "src" }, "GET /health")), loading());
   const ready = el("div", { class: "card" }, el("div", { class: "card-head" }, el("h2", {}, "Data"), el("span", { class: "src" }, "GET /ready")), loading());
-  const auth = el("div", { class: "card section" }, el("div", { class: "card-head" }, el("h2", {}, "Your connection")),
+  const connection = el("div", { class: "card section" }, el("div", { class: "card-head" }, el("h2", {}, "Your connection")),
     el("dl", { class: "facts" },
       el("dt", {}, "Credential"), el("dd", {}, useSignIn
         ? (auth.account() ? `Microsoft sign-in (${auth.account().username})` : "Not signed in")
@@ -753,7 +759,7 @@ async function pageStatus(params, token) {
         ? el("button", { class: "btn-ghost", type: "button", onclick: signOut }, "Sign out")
         : el("button", { class: "btn", type: "button", onclick: signIn }, "Sign in with Microsoft"))
       : el("button", { class: "btn-ghost", type: "button", onclick: () => askForKey() }, "Change API key")));
-  fill(view, head("Status", "Is the API up, can it reach the Gold layer, and how fresh is the data."), el("div", { class: "grid cols-2" }, health, ready), auth);
+  fill(view, head("Status", "Is the API up, can it reach the Gold layer, and how fresh is the data."), el("div", { class: "grid cols-2" }, health, ready), connection);
 
   try {
     const h = await fetch("/health").then((r) => r.json());
@@ -763,6 +769,10 @@ async function pageStatus(params, token) {
       el("dt", {}, "Version"), el("dd", { class: "mono" }, h.version)));
   } catch { health.lastChild.replaceWith(errorBox(new ApiError(0, { code: "network_error", message: "The API could not be reached." }))); }
 
+  if (!connected()) { // nothing to check without a credential, and a 401 here would only show the dialog
+    ready.lastChild.replaceWith(el("p", { class: "muted" }, useSignIn ? "Sign in to check the data connection." : "Enter an API key to check the data connection."));
+    return;
+  }
   try {
     const r = await api("/ready");
     if (token !== renderToken) return;
@@ -845,7 +855,7 @@ function updateAuthUi() {
   $("key-label").textContent = apiKey.value ? "Key set" : "Connect";
   $("signin-area").hidden = !useSignIn;
   if (!useSignIn) return;
-  const account = auth.account();
+  const account = connected() ? auth.account() : null;
   $("signin-button").hidden = Boolean(account);
   $("signed-in").hidden = !account;
   $("signout-button").hidden = !account;
@@ -857,6 +867,7 @@ async function signIn() {
   signInMessage = "";
   try {
     await auth.signIn();
+    signInRejected = false;
   } catch (err) {
     signInMessage = auth.describeError(err);
   }
@@ -870,6 +881,7 @@ async function signOut() {
   try {
     await auth.signOut();
   } catch { /* the local session is cleared either way */ }
+  signInRejected = false;
   signInMessage = "";
   portfolio = null;
   updateAuthUi();
