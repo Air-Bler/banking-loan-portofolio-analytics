@@ -305,7 +305,7 @@ with `src/loan_analytics/llm/`, 1 health test).
 |---|---|---|---|---|
 | local, real Gold | Platform, Data, Errors | 17 | 52 | 0 |
 | dev | Platform, Data, Errors | 17 | 52 | 0 |
-| dev | Assistant | 3 | 10 | 7 (503 until `AZURE_OPENAI_*` is set on dev) |
+| local, `FakeRepository` and the real Azure OpenAI model | Assistant | 4 | 12 | 0 |
 
 ## What is mocked
 
