@@ -29,6 +29,14 @@
           <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="5" cy="8" r="3" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M8 8h7M12.5 8v2.5M14.5 8v2" stroke="currentColor" stroke-width="1.5"/></svg>
           <span id="key-label">Connect</span>
         </button>
+        <div id="signin-area" class="signin-area" hidden>
+          <button id="signin-button" class="key-button" type="button">
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="#f25022" d="M1 1h6.5v6.5H1z"/><path fill="#7fba00" d="M8.5 1H15v6.5H8.5z"/><path fill="#00a4ef" d="M1 8.5h6.5V15H1z"/><path fill="#ffb900" d="M8.5 8.5H15V15H8.5z"/></svg>
+            Sign in with Microsoft
+          </button>
+          <span id="signed-in" class="signed-in" hidden>Signed in as <strong id="user-name"></strong></span>
+          <button id="signout-button" class="key-button" type="button" hidden>Sign out</button>
+        </div>
       </div>
     </div>
   </header>
@@ -38,16 +46,10 @@
   <dialog id="key-dialog">
     <form id="key-form" method="dialog">
       <h2>Connect to the API</h2>
-      <p class="muted">The data routes need a credential. It is sent with every request from this tab and is
-        forgotten when you close it.</p>
+      <p class="muted">The data routes need an API key on this environment. It is sent with every request
+        from this tab and is forgotten when you close it.</p>
       <div id="key-message"></div>
-      <label class="field">Credential
-        <select id="key-kind">
-          <option value="key">API key (local and dev)</option>
-          <option value="bearer">Entra ID bearer token (prod)</option>
-        </select>
-      </label>
-      <label class="field">Value
+      <label class="field">API key
         <input id="key-value" type="password" autocomplete="off" required>
       </label>
       <p class="muted small">Local: the value of <code>API_KEYS</code> in your <code>.env</code>.
@@ -59,6 +61,8 @@
     </form>
   </dialog>
 
+  <script src="vendor/msal-browser-3.30.0.min.js"></script>
+  <script src="auth.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

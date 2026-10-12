@@ -61,6 +61,7 @@ Branch key −1 is kept as an `UNKNOWN` group, so all-branch totals match `kpi_p
   audience `AUTH_AUDIENCE` (or `api://AUTH_AUDIENCE`), and expiry (60 s leeway). API keys are not
   accepted on prod.
 - In `/docs`, use **Authorize** to set the key (or the bearer token on prod).
+- The frontend at `/app` signs users in with Microsoft on prod, so nobody copies a token (see [Frontend](#frontend)).
 
 ## Error format
 
@@ -264,7 +265,10 @@ dependencies and no CDN. It ships in the same container, so every deploy updates
 | Exposure graph | household outstanding, connected customers and applications, the graph path and a customer → application tree | `GET /graph/applications/{id}/connected-exposure` |
 | Status | service version and environment, warehouse reachability and data freshness | `GET /health`, `GET /ready` |
 
-- **Credential.** The page holds no data and loads without a key. On first use it asks for a credential: the API key on local and dev, or an Entra ID bearer token on prod. It sends it on every call as `X-API-Key` or `Authorization: Bearer`. The credential is kept in `sessionStorage`, so it is forgotten when the tab closes, and the page never writes it anywhere else. A 401 reopens the dialog.
+- **Credential.** The page holds no data and loads without a key. It reads `environment` from `/health`:
+  - **prod: Sign in with Microsoft.** [`api/static/auth.js`](../api/static/auth.js) uses MSAL.js (`@azure/msal-browser` 3.30.0, vendored in `api/static/vendor/`, no CDN) with the Team 2 Entra app. The values are client ID `ea9e7159-…`, the athtech tenant, and scope `api://ea9e7159-…/access_as_user`. Sign-in and sign-out use popups that return to the site root, which redirects to `/app/` and keeps the response fragment. Every call sends `Authorization: Bearer <token>`. MSAL renews the token silently, so the session outlives the one-hour token. A 401 shows the sign-in button again, and AADSTS50105 shows "Only Team 2 members can sign in."
+  - **dev and local: API key.** The key is asked for once per tab and sent as `X-API-Key`. A 401 reopens the dialog.
+  - Both live in `sessionStorage`, so they are forgotten when the tab closes. The API side (`api/security.py`) and the settings are unchanged.
 - **Errors** appear in the agreed format, with the code and correlation ID. While `AZURE_OPENAI_*` is not set, the Assistant shows "not available on this environment", and the other pages keep working.
 - **Formatting** happens only in the browser (ratios as %, EUR amounts, dates); the API returns raw values.
 - **Rates are never averaged in the browser.** The by-branch table and the funnel use the API's own grouped values and numerators/denominators.

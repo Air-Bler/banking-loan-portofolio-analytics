@@ -26,3 +26,22 @@ def test_frontend_does_not_open_the_data_routes():
 def test_frontend_is_not_in_the_openapi_schema():
     paths = TestClient(app).get("/openapi.json").json()["paths"]
     assert "/" not in paths and not any(p.startswith("/app") for p in paths)
+
+
+def test_sign_in_scripts_are_served_from_the_app_itself():
+    """MSAL is vendored (no CDN at demo time) and loads before the app."""
+    client = TestClient(app)
+    page = client.get("/app/").text
+    scripts = ["vendor/msal-browser-3.30.0.min.js", "auth.js", "app.js"]
+    assert [page.index(f'src="{s}"') for s in scripts] == sorted(page.index(f'src="{s}"') for s in scripts)
+    assert "cdn" not in page.lower()
+    msal = client.get("/app/vendor/msal-browser-3.30.0.min.js")
+    assert msal.status_code == 200 and "msal-browser v3.30.0" in msal.text[:200]
+    assert client.get("/app/auth.js").status_code == 200
+
+
+def test_root_redirect_keeps_the_sign_in_response():
+    """Entra returns sign-in to the site root; the redirect to /app/ must not add its own fragment,
+    so the browser carries the #code=... fragment over to /app/ for MSAL to read."""
+    location = TestClient(app).get("/", follow_redirects=False).headers["location"]
+    assert "#" not in location
