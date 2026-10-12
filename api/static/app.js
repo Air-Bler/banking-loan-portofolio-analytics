@@ -28,18 +28,33 @@ function range(prefix, from, to) {
 }
 
 // ======================================================================================
-// Credential: kept in sessionStorage, so it is forgotten when the tab closes
+// Credential, chosen by the environment /health reports:
+//   prod        -> "Sign in with Microsoft" (auth.js); every call sends Authorization: Bearer <token>
+//   dev, local  -> an API key entered once per tab; every call sends X-API-Key
+// Both live in sessionStorage, so they are forgotten when the tab closes.
 // ======================================================================================
 
 const store = {
   get(k) { try { return sessionStorage.getItem(k) || ""; } catch { return ""; } },
   set(k, v) { try { sessionStorage.setItem(k, v); } catch { /* storage blocked: memory only */ } },
 };
-const credential = { kind: store.get("authKind") || "key", value: store.get("authValue") };
+let useSignIn = false; // set from /health at start-up
+const apiKey = { value: store.get("apiKey") };
+let signInMessage = ""; // shown on the sign-in card after a failed or expired sign-in
 
-function authHeaders() {
-  if (!credential.value) return {};
-  return credential.kind === "bearer" ? { Authorization: `Bearer ${credential.value}` } : { "X-API-Key": credential.value };
+const connected = () => (useSignIn ? Boolean(auth.account()) : Boolean(apiKey.value));
+
+async function authHeaders() {
+  if (!useSignIn) return apiKey.value ? { "X-API-Key": apiKey.value } : {};
+  const token = await auth.getAccessToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function onUnauthorized(message) {
+  if (!useSignIn) { askForKey(message); return; }
+  signInMessage = message;
+  updateAuthUi();
+  route();
 }
 
 // ======================================================================================
@@ -57,7 +72,14 @@ class ApiError extends Error {
 }
 
 async function api(path, body) {
-  const init = { headers: authHeaders() };
+  let headers;
+  try {
+    headers = await authHeaders();
+  } catch (err) { // the token could not be renewed, even with a popup
+    onUnauthorized(auth.describeError(err));
+    throw new ApiError(401, { code: "unauthorized", message: auth.describeError(err) });
+  }
+  const init = { headers };
   if (body !== undefined) {
     init.method = "POST";
     init.headers = { ...init.headers, "Content-Type": "application/json" };
@@ -72,7 +94,9 @@ async function api(path, body) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const err = new ApiError(response.status, data.error || { correlation_id: response.headers.get("X-Correlation-ID") });
-    if (err.code === "unauthorized") askForKey("The API rejected the credential. Enter a valid one.");
+    if (err.code === "unauthorized") {
+      onUnauthorized(useSignIn ? "Your session has ended. Sign in again." : "The API rejected the credential. Enter a valid one.");
+    }
     throw err;
   }
   return data;
@@ -164,7 +188,7 @@ function errorBox(err) {
       el("code", {}, `correlation id ${err.correlationId || "–"}`));
   }
   const hint = {
-    unauthorized: "Use the key button in the top bar to enter a valid credential.",
+    unauthorized: useSignIn ? "Sign in again with the button in the top bar." : "Use the key button in the top bar to enter a valid API key.",
     data_unavailable: "The data warehouse is unavailable or still waking up. Try again in a minute.",
     validation_error: err.details.map((d) => `${d.field}: ${d.message}`).join("; "),
   }[err.code] || "";
@@ -719,10 +743,16 @@ async function pageStatus(params, token) {
   const ready = el("div", { class: "card" }, el("div", { class: "card-head" }, el("h2", {}, "Data"), el("span", { class: "src" }, "GET /ready")), loading());
   const auth = el("div", { class: "card section" }, el("div", { class: "card-head" }, el("h2", {}, "Your connection")),
     el("dl", { class: "facts" },
-      el("dt", {}, "Credential"), el("dd", {}, credential.value ? (credential.kind === "bearer" ? "Entra ID bearer token" : "API key") : "None"),
+      el("dt", {}, "Credential"), el("dd", {}, useSignIn
+        ? (auth.account() ? `Microsoft sign-in (${auth.account().username})` : "Not signed in")
+        : (apiKey.value ? "API key" : "None")),
       el("dt", {}, "Kept"), el("dd", {}, "In this browser tab only (sessionStorage)"),
       el("dt", {}, "API reference"), el("dd", {}, el("a", { href: "/docs" }, "Swagger UI at /docs"))),
-    el("div", { style: "margin-top:16px" }, el("button", { class: "btn-ghost", type: "button", onclick: () => askForKey() }, "Change credential")));
+    el("div", { style: "margin-top:16px" }, useSignIn
+      ? (auth.account()
+        ? el("button", { class: "btn-ghost", type: "button", onclick: signOut }, "Sign out")
+        : el("button", { class: "btn", type: "button", onclick: signIn }, "Sign in with Microsoft"))
+      : el("button", { class: "btn-ghost", type: "button", onclick: () => askForKey() }, "Change API key")));
   fill(view, head("Status", "Is the API up, can it reach the Gold layer, and how fresh is the data."), el("div", { class: "grid cols-2" }, health, ready), auth);
 
   try {
@@ -760,7 +790,15 @@ function route() {
   document.querySelectorAll(".nav a").forEach((a) => a.classList.toggle("active", a.dataset.page === name));
   const token = ++renderToken;
   window.scrollTo(0, 0);
-  if (!credential.value && name !== "status") {
+  if (!connected() && name !== "status") {
+    if (useSignIn) {
+      fill(view, head("Sign in", "Use your athtech Microsoft account. Team 2 members only."),
+        el("div", { class: "card" },
+          signInMessage ? el("div", { class: "alert error" }, signInMessage) : null,
+          el("p", {}, "This dashboard reads everything through the Loan Analytics API, which accepts only signed-in Team 2 members on this environment."),
+          el("button", { class: "btn", type: "button", onclick: signIn }, "Sign in with Microsoft")));
+      return;
+    }
     fill(view, head("Connect to the API", "Enter an API key to load the data."),
       el("div", { class: "card" }, el("p", {}, "This dashboard reads everything through the Loan Analytics API, and every data route needs a credential."),
         el("button", { class: "btn", type: "button", onclick: () => askForKey() }, "Enter API key")));
@@ -772,12 +810,7 @@ function route() {
 }
 
 async function loadHeader() {
-  fetch("/health").then((r) => r.json()).then((h) => {
-    const badge = $("env-badge");
-    badge.textContent = (h.environment || "").toUpperCase();
-    badge.hidden = !h.environment;
-  }).catch(() => {});
-  if (!credential.value) { $("as-of").textContent = ""; return; }
+  if (!connected()) { $("as-of").textContent = ""; return; }
   try {
     const r = await api("/ready");
     $("as-of").textContent = `Data as of ${fmtDate(r.as_of_date)}`;
@@ -789,29 +822,82 @@ async function loadHeader() {
 function askForKey(message) {
   const dialog = $("key-dialog");
   fill($("key-message"), message ? el("div", { class: "alert error" }, message) : null);
-  $("key-kind").value = credential.kind;
   $("key-value").value = "";
   if (!dialog.open) dialog.showModal();
 }
 
 function initKeyDialog() {
-  const updateLabel = () => { $("key-label").textContent = credential.value ? (credential.kind === "bearer" ? "Token set" : "Key set") : "Connect"; };
   $("key-button").addEventListener("click", () => askForKey());
   $("key-cancel").addEventListener("click", () => $("key-dialog").close());
   $("key-form").addEventListener("submit", () => {
-    credential.kind = $("key-kind").value;
-    credential.value = $("key-value").value.trim();
-    store.set("authKind", credential.kind);
-    store.set("authValue", credential.value);
+    apiKey.value = $("key-value").value.trim();
+    store.set("apiKey", apiKey.value);
     portfolio = null;
-    updateLabel();
+    updateAuthUi();
     loadHeader();
     route();
   });
-  updateLabel();
 }
 
-window.addEventListener("hashchange", route);
-initKeyDialog();
-loadHeader();
-route();
+// The header shows either the API-key button (dev, local) or the Microsoft sign-in state (prod).
+function updateAuthUi() {
+  $("key-button").hidden = useSignIn;
+  $("key-label").textContent = apiKey.value ? "Key set" : "Connect";
+  $("signin-area").hidden = !useSignIn;
+  if (!useSignIn) return;
+  const account = auth.account();
+  $("signin-button").hidden = Boolean(account);
+  $("signed-in").hidden = !account;
+  $("signout-button").hidden = !account;
+  $("user-name").textContent = account ? account.name || account.username : "";
+  $("signed-in").title = account ? account.username : "";
+}
+
+async function signIn() {
+  signInMessage = "";
+  try {
+    await auth.signIn();
+  } catch (err) {
+    signInMessage = auth.describeError(err);
+  }
+  portfolio = null;
+  updateAuthUi();
+  loadHeader();
+  route();
+}
+
+async function signOut() {
+  try {
+    await auth.signOut();
+  } catch { /* the local session is cleared either way */ }
+  signInMessage = "";
+  portfolio = null;
+  updateAuthUi();
+  loadHeader();
+  route();
+}
+
+async function main() {
+  if (auth.inPopup) return; // the sign-in popup: MSAL in the opening window reads the response
+  const health = await fetch("/health").then((r) => r.json()).catch(() => ({}));
+  const badge = $("env-badge");
+  badge.textContent = (health.environment || "").toUpperCase();
+  badge.hidden = !health.environment;
+  useSignIn = health.environment === "prod";
+  if (useSignIn) {
+    try {
+      await auth.start();
+    } catch (err) {
+      signInMessage = auth.describeError(err);
+    }
+  }
+  initKeyDialog();
+  $("signin-button").addEventListener("click", signIn);
+  $("signout-button").addEventListener("click", signOut);
+  updateAuthUi();
+  window.addEventListener("hashchange", route);
+  loadHeader();
+  route();
+}
+
+main();
