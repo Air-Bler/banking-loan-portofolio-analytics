@@ -35,18 +35,19 @@ code, .mono { font-family: var(--mono); font-size: .88em; }
 
 /* ---------- top bar ---------- */
 .topbar { background: var(--nav); color: #fff; }
-.topbar-inner { max-width: 1280px; margin: 0 auto; padding: 10px 24px; display: flex; align-items: center; gap: 28px; }
+.topbar-inner { max-width: 1280px; margin: 0 auto; padding: 10px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 28px; }
 .brand { display: flex; align-items: center; gap: 8px; color: #fff; text-decoration: none; font-weight: 600; white-space: nowrap; }
-.nav { display: flex; gap: 4px; overflow-x: auto; }
+/* Tabs wrap onto a second line when the header is crowded; they never scroll or get cut off. */
+.nav { display: flex; flex-wrap: wrap; gap: 4px; }
 .nav a { color: #cfd6de; text-decoration: none; font-weight: 500; font-size: .92rem; padding: 10px 14px; border-radius: 6px; white-space: nowrap; }
 .nav a:hover { color: #fff; }
 .nav a.active { background: #2a3746; color: #fff; font-weight: 600; }
-.env { margin-left: auto; display: flex; align-items: center; gap: 12px; white-space: nowrap; font-size: .85rem; color: #dfe5eb; }
+.env { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px 12px; white-space: nowrap; font-size: .85rem; color: #dfe5eb; }
 .env-badge { background: #f3c78f; color: #3b2300; font-weight: 700; font-size: .72rem; padding: 3px 7px; border-radius: 4px; }
 .key-button { display: flex; gap: 6px; align-items: center; background: transparent; color: #dfe5eb; border: 1px solid #3a4858; border-radius: 6px; padding: 5px 9px; font: inherit; font-size: .82rem; cursor: pointer; }
 .signin-area { display: flex; align-items: center; gap: 10px; }
 .signed-in { color: #dfe5eb; }
-.signed-in strong { color: #fff; font-weight: 600; }
+.signed-in strong { color: #fff; font-weight: 600; display: inline-block; max-width: 180px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
 .key-button:hover { border-color: #6b7c8f; color: #fff; }
 
 /* ---------- page ---------- */

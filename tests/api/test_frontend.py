@@ -45,3 +45,13 @@ def test_root_redirect_keeps_the_sign_in_response():
     so the browser carries the #code=... fragment over to /app/ for MSAL to read."""
     location = TestClient(app).get("/", follow_redirects=False).headers["location"]
     assert "#" not in location
+
+
+def test_app_js_never_shadows_the_auth_module():
+    """auth.js defines the global `auth`. A local `const auth` in app.js hides it, and reading it inside
+    its own initializer throws "Cannot access 'auth' before initialization" (the Status page on prod)."""
+    import re
+    from pathlib import Path
+
+    app_js = (Path(__file__).parents[2] / "api" / "static" / "app.js").read_text(encoding="utf-8")
+    assert not re.search(r"\b(const|let|var|function)\s+auth\b", app_js)
