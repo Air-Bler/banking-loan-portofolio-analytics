@@ -183,18 +183,29 @@ unknown ID returns 404.
 **POST `/assistant/query`**
 
 ```json
-{"question": "What is the approval rate for 2025?"}
+{"question": "What was the approval rate by branch in 2025?"}
 ```
 
 ```json
-{"answer": "The approval rate for 2025 is 44.19%.",
- "evidence": [{"label": "approval_rate", "value": 0.4419, "source": "gold.kpi_portfolio_summary"}],
- "filters": {"year": 2025}, "source": ["gold.kpi_portfolio_summary"], "measure": "approval_rate",
- "limitations": [], "trace_id": "a1b2c3d4e5f6", "correlation_id": "6f1c2a9e"}
+{"status": "answered",
+ "answer": "BR003 approved 59.2% of decided applications in 2025 (244 of 412).",
+ "evidence": [{"tool": "get_portfolio_kpi",
+               "arguments": {"metric": "approval_rate", "group_by": "branch",
+                             "date_from": "2025-01-01", "date_to": "2025-12-31", "limit": 20},
+               "source": "gold.kpi_portfolio_monthly", "as_of_date": "2025-12-31",
+               "result": {"rows": [{"group": "BR003", "value": 0.5921, "numerator": 244, "denominator": 412}]}}],
+ "filters": {"metric": "approval_rate", "group_by": "branch", "date_from": "2025-01-01", "date_to": "2025-12-31"},
+ "sources": ["gold.kpi_portfolio_monthly"], "measures": ["approval_rate"], "limitations": [],
+ "trace": [{"round": 1, "tool": "get_portfolio_kpi",
+            "arguments": {"metric": "approval_rate", "group_by": "branch",
+                          "date_from": "2025-01-01", "date_to": "2025-12-31"}, "status": "success"}],
+ "model": "gpt-4.1-mini", "tool_rounds": 1, "correlation_id": "6f1c2a9e"}
 ```
 
-Questions that ask for an action ("Delete all rejected applications") or for raw SQL are refused
-with a 200 and an empty `evidence` list. The model is not called for them.
+The full shape and the four statuses (`answered`, `refused`, `no_data`, `incomplete`) are in
+[`contracts.md`](contracts.md) section 6. Questions that ask for an action ("Delete all rejected
+applications") or for raw SQL are refused with a 200, `"status": "refused"` and an empty `evidence`
+list. The model is not called for them.
 
 ## Executable examples: Postman
 
@@ -247,7 +258,7 @@ dependencies and no CDN. It ships in the same container, so every deploy updates
 | Page | What it shows | Calls |
 |---|---|---|
 | Overview | 8 KPI tiles, applications per year (per month inside one year), DTI bands, a by-branch table; period and branch filters | `POST /analytics/query` |
-| Assistant | chat with the assistant: answer, evidence, filters, sources and limitations; refusals are marked | `POST /assistant/query` |
+| Assistant | chat with the assistant: a badge from `status`, the answer, one evidence box per tool call (tool, Gold table, as-of date, values), filters, sources and limitations | `POST /assistant/query` |
 | Branches | one branch's KPIs against the portfolio, the application funnel, applications/approval/delinquency by product, its data-quality exception count | `GET /branches/{code}/summary`, `POST /analytics/query`, `GET /exceptions` |
 | Data quality | totals (rejected, flagged), filters by action, rule, branch and batch, paged table | `GET /exceptions` |
 | Exposure graph | household outstanding, connected customers and applications, the graph path and a customer → application tree | `GET /graph/applications/{id}/connected-exposure` |
@@ -263,13 +274,14 @@ dependencies and no CDN. It ships in the same container, so every deploy updates
   - risk-band mix per branch
   - per-rule exception counts
   - a product filter (the API can group by product, not filter)
-  - the assistant's step-by-step trace (only its `trace_id` is returned)
+  - the assistant's step-by-step trace (returned in `trace`, not shown on the page)
 - **Tests:** `tests/api/test_frontend.py` checks that the page is served without a key, that `/` redirects to it, that it does not open the data routes, and that it stays out of the OpenAPI schema.
 
 ## Test evidence
 
 **pytest** (`uv run pytest -q`, also run by CI on every push, with results uploaded as `test-results.xml`):
-**207 passed** (132 API tests, 74 LLM-assistant tests, 1 health test).
+**408 passed** (137 API tests, 196 assistant tests in `tests/assistant/`, 74 tests of the legacy assistant that go
+with `src/loan_analytics/llm/`, 1 health test).
 
 | File | Tests | Covers |
 |---|---|---|
@@ -278,7 +290,8 @@ dependencies and no CDN. It ships in the same container, so every deploy updates
 | `test_exceptions.py` | 10 | filters, paging, 422, 503 |
 | `test_branches.py`, `test_graph.py` | 4 + 4 | 200, 404, 422, 503 |
 | `test_ready.py` | 2 | ready, and 503 when Databricks is down |
-| `test_assistant.py` | 11 | answer, refusal, 422, not configured / model down → 503, 401, question never logged |
+| `test_assistant.py` | 12 | grounded answer, refusal without calling the model, 422, not configured / model down → 503 `assistant_unavailable`, Databricks down → 503 `data_unavailable`, 401, question never logged |
+| `test_settings.py` | 3 | the `AZURE_OPENAI_*` settings: read from the environment, default API version, key never printed |
 | `test_auth.py` | 17 | 401 on every protected route, key list, `/health` open |
 | `test_jwt.py` | 24 | prod: signature, issuer, audience, expiry, algorithm, missing token |
 | `test_errors.py` | 7 | the error format for 404, 405, 422, 500 and 503; no stack trace |
@@ -302,7 +315,7 @@ The brief allows mocks only when they are documented. These are the only ones:
 |---|---|---|---|
 | `FakeRepository` | [`tests/api/fakes.py`](../tests/api/fakes.py) | `GoldRepository` (Databricks) | CI has no warehouse. A few hand-made rows in the real Gold formats; `fail=True` simulates an outage |
 | `sql.connect` monkeypatch | `tests/api/test_db.py`, `test_queries.py` | the Databricks connector | test the retry and timeout caps and the 503 path without a warehouse |
-| `ScriptedChatModel`, `FakeGoldRepository` | [`tests/llm_helpers.py`](../tests/llm_helpers.py) | Azure OpenAI and Gold, inside the assistant | the assistant tests replay fixed model replies; no network |
+| `ScriptedLLM` | [`tests/assistant/scripted_llm.py`](../tests/assistant/scripted_llm.py) | Azure OpenAI | the assistant and `/assistant/query` tests replay fixed model replies; no network. `tests/llm_helpers.py` is used only by the legacy assistant's tests and goes with them |
 | Test key pair, fake JWKS | `tests/api/test_jwt.py` | Entra ID signing keys | sign test tokens locally; nothing reaches Entra ID |
 
 All of these exist only in `tests/`. The running API, locally and on dev and prod, always uses the

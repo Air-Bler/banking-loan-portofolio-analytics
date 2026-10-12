@@ -131,7 +131,7 @@ ISO 8601 UTC. Formatting is the frontend's job.
 | 405 | `method_not_allowed` | the route exists but not with that HTTP method |
 | 422 | `validation_error` | bad body or parameter; `details` lists each field and message |
 | 503 | `data_unavailable` | Databricks down or timed out |
-| 503 | `assistant_unavailable` | the assistant isn't wired in or Azure OpenAI is down |
+| 503 | `assistant_unavailable` | the assistant isn't configured or Azure OpenAI is down |
 | 500 | `internal_error` | anything unexpected; logged with the correlation ID, no stack trace in the response |
 
 ## 6. Assistant (`api/assistant/`, owned by the LLM pair)
@@ -187,7 +187,7 @@ POST /assistant/query
             "arguments": {"metric": "approval_rate", "group_by": "branch",
                           "date_from": "2025-01-01", "date_to": "2025-12-31"},
             "status": "success"}],
- "model": "gpt-4o-mini",
+ "model": "gpt-4.1-mini",
  "tool_rounds": 1,
  "correlation_id": "6f1c2a9e"}
 ```
@@ -195,14 +195,14 @@ POST /assistant/query
 Only `status`, `answer` and `limitations` come from the model. `evidence`, `filters`, `sources`,
 `measures` and `trace` are built by code from the tool calls that actually ran; `trace` also lists
 failed calls. Every number in `answer` is checked against the tool results: if one is not found,
-the answer is replaced by the raw results and a limitation says why. `correlation_id` is added by
-the route.
+the answer is replaced by the raw results and a limitation says why; a refusal that fails the check
+shows the standard refusal instead. `correlation_id` is added by the route.
 
 | `status` | When |
 |---|---|
 | `answered` | the tools returned data and the answer uses it |
 | `refused` | an action, raw SQL, personal data, prompt injection or an off-topic question; refused before the model is called when the code can tell |
-| `no_data` | the tools returned nothing usable (unknown ID, empty filter, Databricks down during a tool call), or the model answered without any data |
+| `no_data` | the tools returned nothing usable (unknown ID, empty filter such as a KPI with no rows for an unknown branch, Databricks down during a tool call), or the model answered without any data |
 | `incomplete` | the model was still asking for tools after 3 rounds |
 
 Failures that are not an answer use the error format of section 5: `503 data_unavailable` when
@@ -214,7 +214,7 @@ setting is missing or Azure OpenAI still fails after the client's retries.
 | Variable | Value or use |
 |---|---|
 | `AZURE_OPENAI_ENDPOINT` | the Azure OpenAI resource, e.g. `https://oai-loant2gk.openai.azure.com/` |
-| `AZURE_OPENAI_DEPLOYMENT` | the model deployment name, e.g. `gpt-4o-mini` |
+| `AZURE_OPENAI_DEPLOYMENT` | the model deployment name, e.g. `gpt-4.1-mini` |
 | `AZURE_OPENAI_API_KEY` | secret: `.env` locally, Key Vault secret `azure-openai-api-key` on dev and prod |
 | `AZURE_OPENAI_API_VERSION` | optional; default `2024-10-21` |
 
@@ -222,7 +222,7 @@ The client runs with `temperature=0`, a 30-second timeout and 2 retries (429 and
 
 ### Current state
 
-The API route `/assistant/query` (`api/routers/assistant.py`) still calls the legacy assistant in
-`src/loan_analytics/llm/` and returns its older shape (`source`, `measure`, `trace_id`). The next
-step switches that route to `answer()` and updates `tests/api/test_assistant.py` and the Postman
-requests; the legacy package is removed after that.
+The API route `/assistant/query` (`api/routers/assistant.py`) calls `answer()` and returns the
+shape above; the frontend's Assistant page (`api/static/app.js`) and the Postman requests read it.
+The legacy assistant in `src/loan_analytics/llm/` is no longer used and is removed next, with its
+tests (`tests/test_llm_*.py`, `tests/llm_helpers.py`).
