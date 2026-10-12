@@ -43,3 +43,9 @@ done
 az containerapp update -g $RG -n ca-loant2gk-prod --set-env-vars AUTH_TENANT_ID=$TENANT AUTH_AUDIENCE=$APP_ID
 echo "AUTH_TENANT_ID=$TENANT"
 echo "AUTH_AUDIENCE=$APP_ID"
+
+# 4. Addresses the frontend may sign in from (the "Sign in with Microsoft" button, MSAL.js)
+PROD_URL=https://$(az containerapp show -g $RG -n ca-loant2gk-prod --query properties.configuration.ingress.fqdn -o tsv)/
+DEV_URL=https://$(az containerapp show -g $RG -n ca-loant2gk-dev --query properties.configuration.ingress.fqdn -o tsv)/
+az rest --method PATCH --uri "$GRAPH/applications(appId='$APP_ID')" --headers Content-Type=application/json \
+  --body '{"spa":{"redirectUris":["'$PROD_URL'","'$DEV_URL'","http://localhost:8000/"]}}'
