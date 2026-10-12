@@ -22,10 +22,10 @@ def answer(question: str, repo, llm) -> AssistantAnswer:
         result: AssistantAnswer = run(question, repo, llm)["result"]
     except openai.OpenAIError as exc:  # timeout, 429 or 5xx after the client's retries
         raise AssistantUnavailable(f"model call failed: {type(exc).__name__}") from exc
-    # Never the question, the answer or a key: tools, rounds, status and duration only.
+    # Never the question, the answer or a key: each tool step (round, tool, arguments, status), rounds and duration.
     log.info("assistant answer", extra={"fields": {
         "status": result.status,
-        "tools": [step["tool"] for step in result.trace],
+        "steps": result.trace,
         "tool_rounds": result.tool_rounds,
         "duration_ms": round((time.perf_counter() - started) * 1000, 1),
     }})

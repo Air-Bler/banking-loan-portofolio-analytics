@@ -147,7 +147,7 @@ a.row-link:hover { text-decoration: underline; }
 .answer-card .meta { display: flex; align-items: center; gap: 10px; font-size: .8rem; color: var(--muted); }
 .badge { font-size: .76rem; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
 .badge.answered { background: var(--ok-bg); color: var(--primary); }
-.badge.refused, .badge.nodata { background: var(--warn-bg); color: var(--warn); }
+.badge.refused, .badge.nodata, .badge.incomplete {background: var(--warn-bg); color: var(--warn); }
 .badge.unavailable { background: var(--bad-bg); color: var(--bad); }
 .answer-text { font-size: 1.02rem; margin: 14px 0; white-space: pre-wrap; }
 .evidence { border: 1px solid var(--line); border-radius: 6px; margin-bottom: 16px; }

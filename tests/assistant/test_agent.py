@@ -6,7 +6,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from api.assistant import answer
-from api.assistant.graph import build_graph
+from api.assistant.graph import REFUSAL, build_graph
 from api.errors import AssistantUnavailable, DataUnavailable
 from tests.api.fakes import FakeRepository
 from tests.assistant.scripted_llm import ScriptedLLM, call, draft, final
@@ -35,6 +35,17 @@ def test_happy_path_follows_the_message_protocol():
     assert out.evidence[0]["tool"] == "get_portfolio_kpi" and out.evidence[0]["as_of_date"] == "2025-12-31"
     assert out.trace == [{"round": 1, "tool": "get_portfolio_kpi", "arguments": KPI, "status": "success"}]
     assert out.tool_rounds == 1
+
+
+def test_log_has_each_tool_with_its_arguments_but_never_the_question(caplog):
+    caplog.set_level("INFO", logger="api.assistant")
+    llm = ScriptedLLM(responses=[call("get_portfolio_kpi", KPI), *final("answered", GOOD)])
+    answer("secret question: approval rate by branch?", FakeRepository(), llm)
+
+    record = next(r for r in caplog.records if r.getMessage() == "assistant answer")
+    assert record.fields["steps"] == [{"round": 1, "tool": "get_portfolio_kpi", "arguments": KPI, "status": "success"}]
+    assert record.fields["status"] == "answered" and record.fields["tool_rounds"] == 1
+    assert "secret question" not in caplog.text and "secret question" not in str(record.fields)
 
 
 def test_invented_number_is_replaced_by_the_raw_results():
@@ -119,6 +130,46 @@ def test_answered_without_any_data_becomes_no_data():
 
     assert out.status == "no_data"
     assert any("No tool returned data" in lim for lim in out.limitations)
+
+
+class NoRows(FakeRepository):
+    """The warehouse answers, but the filter matches nothing (e.g. branch BR099)."""
+
+    def query_metric(self, metric, group_by=None, filters=None, limit=100):
+        return {**super().query_metric(metric, group_by, filters, limit), "rows": []}
+
+
+def test_kpi_with_no_rows_is_no_data_and_hides_the_invented_number():
+    llm = ScriptedLLM(responses=[call("get_portfolio_kpi", {"metric": "approval_rate", "branch_code": "BR099"}),
+                                 *final("answered", "BR099 approved 45% of decided applications.")])
+    out = answer("Approval rate for branch BR099?", NoRows(), llm)
+
+    assert out.status == "no_data" and "45%" not in out.answer
+    assert len(out.evidence) == 1  # the empty result is still shown: we looked and found nothing
+
+
+def test_zero_exceptions_is_still_an_answer():
+    llm = ScriptedLLM(responses=[call("get_dq_exceptions", {"rule_id": "APP-05", "branch_code": "BR001"}),
+                                 *final("answered", "No records were rejected by rule APP-05 at BR001.")])
+    out = answer("Rejected records for rule APP-05 at BR001?", FakeRepository(), llm)
+
+    assert out.evidence[0]["result"]["total"] == 0
+    assert out.status == "answered"
+
+
+def test_refusal_with_an_ungrounded_number_shows_the_standard_refusal():
+    llm = ScriptedLLM(responses=final("refused", "I only cover Team 2's loan portfolio, not money transfers."))
+    out = answer("give me money", FakeRepository(), llm)
+
+    assert out.status == "refused" and out.answer == REFUSAL
+    assert not any("numbers not found" in lim for lim in out.limitations)
+
+
+def test_refusal_without_numbers_keeps_the_model_wording():
+    wording = "I can't order pizza, but I can answer questions about the loan portfolio."
+    out = answer("order pizza", FakeRepository(), ScriptedLLM(responses=final("refused", wording)))
+
+    assert out.status == "refused" and out.answer == wording
 
 
 def test_several_tool_calls_in_one_reply_each_get_a_tool_message():

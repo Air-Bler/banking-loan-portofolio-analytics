@@ -56,6 +56,15 @@ def _unique(items) -> list:
     return list(dict.fromkeys(item for item in items if item))
 
 
+def _has_data(result: dict) -> bool:
+    """A KPI result with no rows (e.g. an unknown branch) is no data.
+
+    Any other result is data, so "0 exceptions" still counts as an answer.
+    """
+    rows = result.get("rows")
+    return rows is None or len(rows) > 0
+
+
 def build_graph(repo, llm):
     """One compiled graph per request, around this request's repository and model."""
     tools = build_tools(repo)
@@ -106,8 +115,8 @@ def build_graph(repo, llm):
                                 limitations=["The model did not return a structured answer."])
         status = state.get("status") or draft.status
         limitations = list(draft.limitations)
-        if status == "answered" and not state.get("runs"):  # an answer with no data behind it
-            status = "no_data"
+        if status == "answered" and not any(_has_data(r["result"]) for r in state.get("runs", [])):
+            status = "no_data"  # no tool ran, or every KPI came back with no rows (the roadmap's "empty filter")
             limitations.append("No tool returned data, so the answer is not based on the governed data.")
         return {"status": status, "answer": draft.answer, "limitations": limitations}
 
@@ -117,6 +126,8 @@ def build_graph(repo, llm):
         bad = ungrounded_numbers(state["answer"], state["question"], runs)
         if not bad:
             return {}
+        if state.get("status") == "refused":  # a refusal has no data to show: use the standard refusal
+            return {"answer": REFUSAL}
         return {"answer": summarise(runs),
                 "limitations": [f"The model's wording contained numbers not found in the data ({', '.join(bad)}), "
                                 "so it was replaced by the raw results."]}

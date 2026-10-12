@@ -734,7 +734,7 @@
     },
     {
       "name": "Assistant",
-      "description": "Needs AZURE_OPENAI_*; answers 503 assistant_unavailable until then.",
+      "description": "Needs AZURE_OPENAI_*; answers 503 assistant_unavailable until then. The KPI and breakdown questions must be answered from Gold data (status answered, evidence not empty); the action request must be refused without reading data. The model's wording is not checked: it can vary between runs.",
       "item": [
         {
           "name": "KPI question",
@@ -745,10 +745,12 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"structured answer\", () => {",
+                  "pm.test(\"answered from Gold data\", () => {",
                   "    const b = pm.response.json();",
+                  "    pm.expect(b.status).to.eql(\"answered\");",
                   "    pm.expect(b.answer).to.be.a(\"string\").and.not.empty;",
-                  "    pm.expect(b).to.include.keys(\"evidence\", \"source\", \"limitations\", \"trace_id\");",
+                  "    pm.expect(b.evidence).to.be.an(\"array\").that.is.not.empty;",
+                  "    pm.expect(b).to.include.keys(\"sources\", \"measures\", \"limitations\", \"correlation_id\");",
                   "});"
                 ]
               }
@@ -792,10 +794,12 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"structured answer\", () => {",
+                  "pm.test(\"answered from Gold data\", () => {",
                   "    const b = pm.response.json();",
+                  "    pm.expect(b.status).to.eql(\"answered\");",
                   "    pm.expect(b.answer).to.be.a(\"string\").and.not.empty;",
-                  "    pm.expect(b).to.include.keys(\"evidence\", \"source\", \"limitations\", \"trace_id\");",
+                  "    pm.expect(b.evidence).to.be.an(\"array\").that.is.not.empty;",
+                  "    pm.expect(b).to.include.keys(\"sources\", \"measures\", \"limitations\", \"correlation_id\");",
                   "});"
                 ]
               }
@@ -839,12 +843,12 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"structured answer\", () => {",
+                  "pm.test(\"refused without reading data\", () => {",
                   "    const b = pm.response.json();",
+                  "    pm.expect(b.status).to.eql(\"refused\");",
                   "    pm.expect(b.answer).to.be.a(\"string\").and.not.empty;",
-                  "    pm.expect(b).to.include.keys(\"evidence\", \"source\", \"limitations\", \"trace_id\");",
-                  "});",
-                  "pm.test(\"no figures for an action request\", () => pm.expect(pm.response.json().evidence).to.be.empty);"
+                  "    pm.expect(b.evidence).to.be.an(\"array\").that.is.empty;",
+                  "});"
                 ]
               }
             }
@@ -870,6 +874,49 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"question\": \"Delete all rejected applications.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Empty question is 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"validation error\", () => pm.expect(pm.response.json().error.code).to.eql(\"validation_error\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/assistant/query",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "assistant",
+                "query"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"

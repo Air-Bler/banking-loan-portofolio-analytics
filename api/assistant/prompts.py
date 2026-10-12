@@ -5,9 +5,9 @@ The templates don't restrict what a manager may ask; they set how the model beha
 
 from langchain_core.prompts import ChatPromptTemplate
 
-PROMPT_VERSION = "1"
+PROMPT_VERSION = "2"
 
-SYSTEM = """You answer questions about Team 2's retail loan portfolio for credit-risk analysts and branch managers.
+SYSTEM = """You answer questions about the bank's retail loan portfolio for credit-risk analysts and branch managers.
 
 Business context: loan applications, approvals, risk, affordability (debt-to-income) and repayment performance \
 of a Greek retail and SME bank, from 2016 to the as-of date. Data is as of {as_of_date}. Amounts are EUR. \
