@@ -5,7 +5,7 @@ after telling the team, in a pull request that updates this file.
 
 ## 1. Settings (environment variables only)
 
-The names match `.env.example` and the LLM pair's code (`src/loan_analytics/llm/settings.py`).
+The names match `.env.example` and the settings in `api/settings.py`.
 Locally they come from `.env` (git-ignored); on dev and prod from Key Vault.
 
 | Variable | Value or use |
@@ -86,13 +86,13 @@ Rules:
 - `dti_band_share` comes from `kpi_portfolio_summary` only: any grouping or filter on it is a 422.
 - Rates are never averaged: sum numerators and denominators, then divide.
 
-**Open question for the LLM pair:** the assistant already has its own repository
+**Open question for the LLM pair:** the assistant had its own repository
 (`src/loan_analytics/llm/repository.py`, `execute(ApprovedQuery)` through the Databricks SDK).
 Do we keep both, or do the assistant tools call `api/queries.py`?
 
 **Answer (LLM pair):** the assistant tools call `api/queries.py` only. The new assistant lives in
-`api/assistant/` and writes no SQL; the legacy `src/loan_analytics/llm/` is removed once
-`/assistant/query` calls the new assistant (section 6).
+`api/assistant/` and writes no SQL; the legacy `src/loan_analytics/llm/` has been removed
+(section 6).
 
 ## 4. Analytics request and response (values illustrative)
 
@@ -224,5 +224,4 @@ The client runs with `temperature=0`, a 30-second timeout and 2 retries (429 and
 
 The API route `/assistant/query` (`api/routers/assistant.py`) calls `answer()` and returns the
 shape above; the frontend's Assistant page (`api/static/app.js`) and the Postman requests read it.
-The legacy assistant in `src/loan_analytics/llm/` is no longer used and is removed next, with its
-tests (`tests/test_llm_*.py`, `tests/llm_helpers.py`).
+The legacy assistant (`src/loan_analytics/llm/`) and its tests have been removed.
