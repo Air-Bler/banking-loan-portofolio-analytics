@@ -271,6 +271,7 @@ dependencies and no CDN. It ships in the same container, so every deploy updates
   - Both live in `sessionStorage`, so they are forgotten when the tab closes. The API side (`api/security.py`) and the settings are unchanged.
 - **Errors** appear in the agreed format, with the code and correlation ID. While `AZURE_OPENAI_*` is not set, the Assistant shows "not available on this environment", and the other pages keep working.
 - **Formatting** happens only in the browser (ratios as %, EUR amounts, dates); the API returns raw values.
+- **Language:** an EN / ΕΛ switch in the top bar translates the whole dashboard, and numbers and dates follow it (`59.2%` / `59,2%`, `31 Dec 2025` / `31 Δεκ 2025`). The texts live in [`api/static/i18n.js`](../api/static/i18n.js), and the choice is remembered in the browser. API data (codes, rule descriptions, the API's own error messages) stays as the API returns it. The assistant answers in the language of the question, so the suggested questions follow the switch too. A test checks that every translated text has a Greek entry.
 - **Rates are never averaged in the browser.** The by-branch table and the funnel use the API's own grouped values and numerators/denominators.
 - **Data is inserted with `textContent`**, never as HTML.
 - **Not shown, because the API does not expose it:**

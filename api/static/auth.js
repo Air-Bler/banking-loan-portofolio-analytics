@@ -71,10 +71,10 @@ const auth = (() => {
   // AADSTS50105: the user is in the tenant but not assigned to the app (not a Team 2 member).
   function describeError(err) {
     const text = `${err?.errorCode || ""} ${err?.errorMessage || ""} ${err?.message || ""}`;
-    if (text.includes("AADSTS50105")) return "Only Team 2 members can sign in.";
-    if (err?.errorCode === "user_cancelled") return "Sign-in was cancelled.";
-    if (err?.errorCode === "popup_window_error") return "The sign-in window was blocked. Allow pop-ups for this site and try again.";
-    return "Sign-in failed. Try again.";
+    if (text.includes("AADSTS50105")) return t("Only Team 2 members can sign in.");
+    if (err?.errorCode === "user_cancelled") return t("Sign-in was cancelled.");
+    if (err?.errorCode === "popup_window_error") return t("The sign-in window was blocked. Allow pop-ups for this site and try again.");
+    return t("Sign-in failed. Try again.");
   }
 
   return { inPopup, start, account, signIn, signOut, getAccessToken, describeError };
