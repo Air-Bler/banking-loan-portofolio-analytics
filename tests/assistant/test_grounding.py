@@ -193,3 +193,36 @@ def test_summary_formats_amounts_and_counts():
     text = summarise([run])
     assert "EUR 129,992,400.62" in text and "Filters: branch_code=BR001" in text and "Whole portfolio" in text
     assert ungrounded_numbers(text, "", [run]) == []
+
+
+# ---- numbers written in field names (found by the evaluation on the real model) ---------------------------------------------
+def test_a_threshold_written_in_a_field_name_is_allowed():
+    # connected_exposure has is_delinquent_30 per application; "30+ days past due" is its definition, not a new figure
+    run = {"tool": "get_connected_exposure", "arguments": {"application_id": "LA000225"},
+           "result": {"members": 2, "delinquent_loans": 0, "applications": [{"application_id": "LA000225", "is_delinquent_30": 0}]}}
+    text = "The household has 2 borrowers and no loans 30 or more days past due."
+    assert ungrounded_numbers(text, "What is the connected exposure for application LA000225?", [run]) == []
+
+
+def test_a_metric_name_with_a_number_allows_that_number():
+    run = {"tool": "get_portfolio_kpi", "arguments": {"metric": "delinquency_rate_30"}, "result": {"rows": []}}
+    assert ungrounded_numbers("Loans 30 days past due.", "", [run]) == []
+
+
+def test_other_numbers_are_still_found_next_to_such_names():
+    run = {"tool": "t", "arguments": {}, "result": {"is_delinquent_30": 0, "as_of_date": "2025-12-31", "source": "gold.kg_nodes"}}
+    assert ungrounded_numbers("About 45 days, in 12 branches, 31%.", "", [run]) == ["45", "12", "31%"]  # date parts are not allowed
+
+
+def test_identifiers_with_letters_before_the_number_do_not_allow_it():
+    run = {"tool": "t", "arguments": {"branch_code": "BR003"}, "result": {"group": "LA000225", "batch": "batch_001"}}
+    assert ungrounded_numbers("Exactly 3 branches.", "", [run]) == ["3"]
+
+
+
+def test_a_percentage_in_the_question_may_come_back_as_a_fraction():
+    # "Compare the approval rate with a target of 70%": the model wrote 0.7 (found by the team's tests with the real model)
+    question = "Compare the approval rate with a target of 70%"
+    assert ungrounded_numbers("The rate of 0.5921 is below your target of 0.7.", question, [kpi_run()]) == []
+    assert ungrounded_numbers("The rate of 0.5921 is below your target of 70%.", question, [kpi_run()]) == []
+    assert ungrounded_numbers("The rate is below your target of 0.8.", question, [kpi_run()]) == ["0.8"]
