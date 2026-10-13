@@ -283,8 +283,7 @@ dependencies and no CDN. It ships in the same container, so every deploy updates
 ## Test evidence
 
 **pytest** (`uv run pytest -q`, also run by CI on every push, with results uploaded as `test-results.xml`):
-**412 passed** (140 API tests, 197 assistant tests in `tests/assistant/`, 74 tests of the legacy assistant that go
-with `src/loan_analytics/llm/`, 1 health test).
+**338 passed** (140 API tests, 197 assistant tests in `tests/assistant/`, 1 health test).
 
 | File | Tests | Covers |
 |---|---|---|
