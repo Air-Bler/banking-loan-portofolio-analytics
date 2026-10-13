@@ -5,7 +5,7 @@ after telling the team, in a pull request that updates this file.
 
 ## 1. Settings (environment variables only)
 
-The names match `.env.example` and the assistant's settings (`api/assistant/`).
+The names match `.env.example` and the settings in `api/settings.py`.
 Locally they come from `.env` (git-ignored); on dev and prod from Key Vault.
 
 | Variable | Value or use |
@@ -86,7 +86,7 @@ Rules:
 - `dti_band_share` comes from `kpi_portfolio_summary` only: any grouping or filter on it is a 422.
 - Rates are never averaged: sum numerators and denominators, then divide.
 
-**Open question for the LLM pair:** the assistant already has its own repository
+**Open question for the LLM pair:** the assistant had its own repository
 (`src/loan_analytics/llm/repository.py`, `execute(ApprovedQuery)` through the Databricks SDK).
 Do we keep both, or do the assistant tools call `api/queries.py`?
 

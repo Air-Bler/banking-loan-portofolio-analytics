@@ -317,7 +317,7 @@ The brief allows mocks only when they are documented. These are the only ones:
 |---|---|---|---|
 | `FakeRepository` | [`tests/api/fakes.py`](../tests/api/fakes.py) | `GoldRepository` (Databricks) | CI has no warehouse. A few hand-made rows in the real Gold formats; `fail=True` simulates an outage |
 | `sql.connect` monkeypatch | `tests/api/test_db.py`, `test_queries.py` | the Databricks connector | test the retry and timeout caps and the 503 path without a warehouse |
-| `ScriptedLLM` | [`tests/assistant/scripted_llm.py`](../tests/assistant/scripted_llm.py) | Azure OpenAI | the assistant and `/assistant/query` tests replay fixed model replies; no network. `tests/llm_helpers.py` is used only by the legacy assistant's tests and goes with them |
+| `ScriptedLLM` | [`tests/assistant/scripted_llm.py`](../tests/assistant/scripted_llm.py) | Azure OpenAI | the assistant and `/assistant/query` tests replay fixed model replies; no network |
 | Test key pair, fake JWKS | `tests/api/test_jwt.py` | Entra ID signing keys | sign test tokens locally; nothing reaches Entra ID |
 
 All of these exist only in `tests/`. The running API, locally and on dev and prod, always uses the
