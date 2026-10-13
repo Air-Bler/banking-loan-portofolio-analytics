@@ -55,3 +55,42 @@ def test_app_js_never_shadows_the_auth_module():
 
     app_js = (Path(__file__).parents[2] / "api" / "static" / "app.js").read_text(encoding="utf-8")
     assert not re.search(r"\b(const|let|var|function)\s+auth\b", app_js)
+
+
+def _static(name):
+    from pathlib import Path
+
+    return (Path(__file__).parents[2] / "api" / "static" / name).read_text(encoding="utf-8")
+
+
+def test_language_file_loads_before_the_scripts_that_use_it():
+    page = TestClient(app).get("/app/").text
+    order = [page.index(f'src="{s}"') for s in ("i18n.js", "auth.js", "app.js")]
+    assert order == sorted(order)
+    assert 'id="lang-switch"' in page and 'role="switch"' in page
+
+
+def test_every_translated_text_has_greek():
+    """Each English text app.js passes to t()/tn() must have a Greek entry in i18n.js."""
+    import re
+
+    app_js, lib = _static("app.js"), _static("i18n.js")
+    text = r'"((?:[^"\\]|\\.)*)"'
+    greek = set(re.findall(r"^\s*" + text + r":", lib, re.M))
+    used = set(re.findall(r"\bt\(" + text, app_js))
+    for m in re.finditer(r"\btn\([^,]+,\s*" + text + r",\s*" + text, app_js):
+        used |= {m.group(1), m.group(2)}
+    for name in ("KPI_NOTES", "PRODUCTS"):  # passed to t() at runtime
+        block = app_js[app_js.index(f"const {name} = {{"):]
+        used |= set(re.findall(r':\s*"([^"]+)"', block[: block.index("};")]))
+    for name in ("SUGGESTIONS", "TOOLS"):
+        block = app_js[app_js.index(f"const {name} = ["):]
+        used |= {s for s in re.findall(r'"([^"]+)"', block[: block.index("];")]) if not s.startswith("get_")}
+    assert sorted(used - greek) == []
+
+
+def test_app_js_never_shadows_the_translation_functions():
+    """i18n.js defines the global t and tn; a top-level `const t` in app.js would hide them."""
+    import re
+
+    assert not re.search(r"^(const|let|var|function)\s+(t|tn|i18n)\b", _static("app.js"), re.M)

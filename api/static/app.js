@@ -95,13 +95,13 @@ async function api(path, body) {
   try {
     response = await fetch(path, init);
   } catch {
-    throw new ApiError(0, { code: "network_error", message: "The API could not be reached." });
+    throw new ApiError(0, { code: "network_error", message: t("The API could not be reached.") });
   }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const err = new ApiError(response.status, data.error || { correlation_id: response.headers.get("X-Correlation-ID") });
     if (err.code === "unauthorized") {
-      onUnauthorized(useSignIn ? "Your session has ended. Sign in again." : "The API rejected the credential. Enter a valid one.");
+      onUnauthorized(useSignIn ? t("Your session has ended. Sign in again.") : t("The API rejected the credential. Enter a valid one."));
     }
     throw err;
   }
@@ -121,7 +121,8 @@ async function loadMetrics() {
 }
 const KPIS = () => Object.keys(metrics).filter((n) => n !== "dti_band_share");
 const unitOf = (n) => metrics?.[n]?.unit;
-const labelOf = (n) => metrics?.[n]?.label || n;
+const labelOf = (n) => t(metrics?.[n]?.label || n);
+const definitionOf = (n) => t(metrics?.[n]?.definition || "");
 
 // Whole-portfolio KPI values, cached for the branch comparison.
 let portfolio = null;
@@ -165,18 +166,26 @@ function fill(node, ...children) {
   return append(node, children);
 }
 
-const nf = new Intl.NumberFormat("en-GB");
-const eur0 = new Intl.NumberFormat("en-GB", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
-const eurC = new Intl.NumberFormat("en-GB", { style: "currency", currency: "EUR", notation: "compact", maximumFractionDigits: 1 });
-const dateLong = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+// Number and date formats follow the chosen language (1,234.5 and 59.2% in English; 1.234,5 and 59,2% in Greek).
+let nf, nf1, pct, eur0, eurC, dateLong;
+function makeFormatters() {
+  const loc = i18n.locale();
+  nf = new Intl.NumberFormat(loc);
+  nf1 = new Intl.NumberFormat(loc, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  pct = new Intl.NumberFormat(loc, { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  eur0 = new Intl.NumberFormat(loc, { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
+  eurC = new Intl.NumberFormat(loc, { style: "currency", currency: "EUR", notation: "compact", maximumFractionDigits: 1 });
+  dateLong = new Intl.DateTimeFormat(loc, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+}
+makeFormatters();
 
 function fmt(value, unit, { compact = true } = {}) {
   if (value === null || value === undefined || Number.isNaN(value)) return "–";
   if (typeof value !== "number") return String(value);
   switch (unit) {
-    case "ratio": return `${(value * 100).toFixed(1)}%`;
+    case "ratio": return pct.format(value);
     case "EUR": return compact ? eurC.format(value) : eur0.format(value);
-    case "days": return `${value.toFixed(1)} days`;
+    case "days": return t("{v} days", { v: nf1.format(value) });
     case "count": return nf.format(Math.round(value));
     default: return nf.format(Math.round(value * 100) / 100);
   }
@@ -185,21 +194,26 @@ const fmtDate = (iso) => (iso ? dateLong.format(new Date(`${iso}T00:00:00Z`)) : 
 const fmtDateTime = (iso) => (iso ? iso.replace("T", " ").slice(0, 16) : "–");
 const short = (id) => (id && id.length > 14 ? `${id.slice(0, 6)}…${id.slice(-4)}` : id);
 const nodeId = (id) => (id || "").replace(/^customer:/, "");
+// UNDER_REVIEW -> "Under review" -> translated
+const humanize = (code) => (code ? t(code.replace(/_/g, " ").toLowerCase().replace(/^./, (c) => c.toUpperCase())) : "–");
 
 function errorBox(err) {
   if (err.code === "assistant_unavailable") {
     return el("div", { class: "alert notice" },
-      el("strong", {}, "The assistant is not available on this environment. "),
-      "Azure OpenAI is not configured or is down; the rest of the dashboard works without it. ",
-      el("code", {}, `correlation id ${err.correlationId || "–"}`));
+      el("strong", {}, t("The assistant is not available on this environment. ")),
+      t("Azure OpenAI is not configured or is down; the rest of the dashboard works without it. "),
+      el("code", {}, t("correlation id {id}", { id: err.correlationId || "–" })));
   }
   const hint = {
-    unauthorized: useSignIn ? "Sign in again with the button in the top bar." : "Use the key button in the top bar to enter a valid API key.",
-    data_unavailable: "The data warehouse is unavailable or still waking up. Try again in a minute.",
+    unauthorized: useSignIn ? t("Sign in again with the button in the top bar.") : t("Use the key button in the top bar to enter a valid API key."),
+    data_unavailable: t("The data warehouse is unavailable or still waking up. Try again in a minute."),
     validation_error: err.details.map((d) => `${d.field}: ${d.message}`).join("; "),
+    not_found: i18n.lang === "el" ? err.message : "", // the API's own text names the missing item
   }[err.code] || "";
-  return el("div", { class: "alert error" }, el("strong", {}, err.message), hint ? ` ${hint} ` : " ",
-    el("code", {}, `${err.code}${err.correlationId ? ` · correlation id ${err.correlationId}` : ""}`));
+  // The API's messages are English; in Greek show the translated title for the error code.
+  const title = i18n.has(`error:${err.code}`) ? t(`error:${err.code}`) : err.message;
+  return el("div", { class: "alert error" }, el("strong", {}, title), hint ? ` ${hint} ` : " ",
+    el("code", {}, `${err.code}${err.correlationId ? ` · ${t("correlation id {id}", { id: err.correlationId })}` : ""}`));
 }
 
 function table(columns, rows, attrs = {}) {
@@ -238,7 +252,7 @@ function svg(tag, attrs = {}, text) {
 
 function vbars(rows, format = (v) => nf.format(v)) {
   const data = rows.filter((r) => typeof r.value === "number");
-  if (!data.length) return el("p", { class: "empty" }, "No data for this selection.");
+  if (!data.length) return el("p", { class: "empty" }, t("No data for this selection."));
   const W = 600, H = 250, bottom = 26, top = 22, max = Math.max(...data.map((r) => r.value)) || 1;
   const slot = W / data.length, barW = Math.min(44, slot * 0.72);
   const chart = svg("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
@@ -256,7 +270,7 @@ function vbars(rows, format = (v) => nf.format(v)) {
   return el("div", { class: "vbars" }, chart);
 }
 
-function loading(text = "Loading…") { return el("p", { class: "empty" }, text); }
+function loading(text) { return el("p", { class: "empty" }, text ?? t("Loading…")); }
 
 function options(values, selected, label = (v) => v) {
   return values.map((v) => el("option", { value: v, selected: String(v) === String(selected) }, label(v)));
@@ -286,26 +300,26 @@ async function pageOverview(params, token) {
   if (branch) filters.branch_code = branch;
 
   const yearSel = el("select", { id: "f-year" }, el("option", { value: "all" }, "2016 – 2025"), options(YEARS, period));
-  const branchSel = el("select", { id: "f-branch" }, el("option", { value: "" }, "All branches"), options(BRANCHES, branch));
+  const branchSel = el("select", { id: "f-branch" }, el("option", { value: "" }, t("All branches")), options(BRANCHES, branch));
   yearSel.value = period;
   const apply = () => go("overview", { year: yearSel.value === "all" ? null : yearSel.value, branch: branchSel.value || null });
 
   const tiles = el("div", { class: "grid cols-4" }, KPIS().map((n) => el("div", { class: "tile loading", id: `t-${n}` },
-    el("div", { class: "label" }, labelOf(n)), el("div", { class: "value" }, "—"), el("div", { class: "sub" }, KPI_NOTES[n] || ""))));
+    el("div", { class: "label" }, labelOf(n)), el("div", { class: "value" }, "—"), el("div", { class: "sub" }, t(KPI_NOTES[n] || "")))));
   const yearCard = el("div", { class: "card" }, el("div", { class: "card-head" },
-    el("h2", {}, period === "all" ? "Applications per year" : `Applications per month, ${period}`),
+    el("h2", {}, period === "all" ? t("Applications per year") : t("Applications per month, {year}", { year: period })),
     el("span", { class: "src" }, "kpi_portfolio_monthly")), loading());
   const dtiCard = el("div", { class: "card" }, el("div", { class: "card-head" },
-    el("h2", {}, "Debt-to-income bands"), el("span", { class: "src" }, "kpi_portfolio_summary")), loading());
+    el("h2", {}, t("Debt-to-income bands")), el("span", { class: "src" }, "kpi_portfolio_summary")), loading());
   const branchCard = el("div", { class: "card section" }, el("div", { class: "card-head" },
-    el("h2", {}, "By branch"), el("a", { href: "#/branches" }, "Open branch drill-through")), loading());
+    el("h2", {}, t("By branch")), el("a", { href: "#/branches" }, t("Open branch drill-through"))), loading());
 
   fill(view,
-    head("Portfolio overview", "The 8 governed KPIs from the Gold layer, with the same definitions as the Power BI report.",
+    head(t("Portfolio overview"), t("The 8 governed KPIs from the Gold layer, with the same definitions as the Power BI report."),
       el("form", { class: "filters", onsubmit: (e) => { e.preventDefault(); apply(); } },
-        el("label", { class: "field" }, "Period", yearSel),
-        el("label", { class: "field" }, "Branch", branchSel),
-        el("button", { class: "btn", type: "submit" }, "Apply"))),
+        el("label", { class: "field" }, t("Period"), yearSel),
+        el("label", { class: "field" }, t("Branch"), branchSel),
+        el("button", { class: "btn", type: "submit" }, t("Apply")))),
     tiles,
     el("div", { class: "grid cols-2 section" }, yearCard, dtiCard),
     branchCard);
@@ -320,7 +334,7 @@ async function pageOverview(params, token) {
       if (token !== renderToken) return;
       node.classList.remove("loading");
       node.querySelector(".value").textContent = fmt(res.rows[0]?.value, unitOf(n));
-      node.title = metrics[n].definition;
+      node.title = definitionOf(n);
     } catch (err) {
       if (token !== renderToken) return;
       node.querySelector(".value").textContent = "–";
@@ -339,12 +353,12 @@ async function pageOverview(params, token) {
   // DTI bands: Gold has them for the whole portfolio only
   query("dti_band_share").then((res) => {
     if (token !== renderToken) return;
-    const label = { below_20: "Under 20%", "20_35": "20–35%", "35_50": "35–50%", above_50: "Over 50%" };
+    const label = { below_20: t("Under 20%"), "20_35": "20–35%", "35_50": "35–50%", above_50: t("Over 50%") };
     dtiCard.lastChild.replaceWith(el("div", {},
       hbars(res.rows.map((r) => ({ label: label[r.group] || r.group, value: r.value })), {
         colors: ["#1f4e89", "#4f7cb0", "#e4a05a", "#8a3c06"], format: (v) => fmt(v, "ratio"), max: 1,
       }),
-      el("p", { class: "note" }, "Share of applications in each debt-to-income band. Gold keeps this KPI for the whole portfolio only, so the period and branch filters do not apply.")));
+      el("p", { class: "note" }, t("Share of applications in each debt-to-income band. Gold keeps this KPI for the whole portfolio only, so the period and branch filters do not apply."))));
   }).catch((err) => token === renderToken && dtiCard.lastChild.replaceWith(errorBox(err)));
 
   // By branch: one grouped query per column, joined on the branch code
@@ -356,20 +370,21 @@ async function pageOverview(params, token) {
     const rows = Object.values(byBranch).sort((a, b) => (b.applications ?? 0) - (a.applications ?? 0));
     branchCard.lastChild.replaceWith(el("div", {},
       table([
-        { label: "Branch", render: (r) => el("a", { class: "row-link", href: `#/branches/${r.code}` }, r.code) },
-        { label: "Applications", num: true, render: (r) => fmt(r.applications, "count") },
-        { label: "Approval rate", num: true, render: (r) => fmt(r.approval_rate, "ratio") },
-        { label: "Avg decision (days)", num: true, render: (r) => (r.avg_decision_days ?? null) === null ? "–" : r.avg_decision_days.toFixed(1) },
-        { label: "Delinquency 30+", num: true, render: (r) => fmt(r.delinquency_rate_30, "ratio") },
-        { label: "Outstanding", num: true, render: (r) => fmt(r.outstanding_balance, "EUR") },
+        { label: t("Branch"), render: (r) => el("a", { class: "row-link", href: `#/branches/${r.code}` }, r.code) },
+        { label: t("Applications"), num: true, render: (r) => fmt(r.applications, "count") },
+        { label: t("Approval rate"), num: true, render: (r) => fmt(r.approval_rate, "ratio") },
+        { label: t("Avg decision (days)"), num: true, render: (r) => (r.avg_decision_days ?? null) === null ? "–" : nf1.format(r.avg_decision_days) },
+        { label: t("Delinquency 30+"), num: true, render: (r) => fmt(r.delinquency_rate_30, "ratio") },
+        { label: t("Outstanding"), num: true, render: (r) => fmt(r.outstanding_balance, "EUR") },
       ], rows),
-      el("div", { class: "table-foot" }, el("span", {}, `${rows.length} branches · from POST `, el("code", {}, "/analytics/query")))));
+      el("div", { class: "table-foot" }, el("span", {}, tn(rows.length, "{n} branch · from POST ", "{n} branches · from POST "), el("code", {}, "/analytics/query")))));
   }).catch((err) => token === renderToken && branchCard.lastChild.replaceWith(errorBox(err)));
 }
 
 // ---------- Assistant ----------
 
 const conversation = []; // survives navigation between pages
+let assistantRender = null; // the open Assistant page's render, so an answer that arrives later shows there
 
 const SUGGESTIONS = [
   "What was the approval rate by branch in 2025?",
@@ -386,13 +401,14 @@ const TOOLS = [
 
 function pageAssistant() {
   const chat = el("div", { class: "chat" });
-  const input = el("input", { id: "ask", maxlength: 1000, placeholder: "e.g. Which branches have the highest delinquency?", autocomplete: "off" });
-  const send = el("button", { class: "btn", type: "submit" }, "Ask");
+  const input = el("input", { id: "ask", maxlength: 1000, placeholder: t("e.g. Which branches have the highest delinquency?"), autocomplete: "off" });
+  const send = el("button", { class: "btn", type: "submit" }, t("Ask"));
 
   const render = () => fill(chat, conversation.map(renderTurn), el("form", { class: "card composer", onsubmit: submit },
-    el("label", { for: "ask" }, "Ask about the portfolio"),
+    el("label", { for: "ask" }, t("Ask about the portfolio")),
     el("div", { class: "row" }, input, send),
-    el("div", { class: "hint" }, "Sends POST ", el("code", {}, "/assistant/query"), ". Questions about actions or raw SQL are refused before the model is called.")));
+    el("div", { class: "hint" }, t("Sends POST "), el("code", {}, "/assistant/query"), t(". Questions about actions or raw SQL are refused before the model is called."))));
+  assistantRender = render;
 
   async function ask(question) {
     const turn = { question, pending: true, started: performance.now() };
@@ -407,7 +423,7 @@ function pageAssistant() {
     turn.pending = false;
     turn.seconds = (performance.now() - turn.started) / 1000;
     send.disabled = false;
-    if (location.hash.startsWith("#/assistant")) { render(); input.focus(); }
+    if (location.hash.startsWith("#/assistant")) { (assistantRender || render)(); $("ask")?.focus(); }
   }
 
   function submit(e) {
@@ -419,61 +435,64 @@ function pageAssistant() {
   }
 
   fill(view,
-    head("Portfolio assistant", "Ask a question in plain language. Every number in an answer is copied from a tool result over the Gold layer, and the evidence is shown under it."),
+    head(t("Portfolio assistant"), t("Ask a question in plain language. Every number in an answer is copied from a tool result over the Gold layer, and the evidence is shown under it.")),
     el("div", { class: "assistant" },
       el("aside", { class: "side" },
-        el("div", { class: "card" }, el("h2", {}, "Try asking"),
-          SUGGESTIONS.map((s) => el("button", { class: "suggest", type: "button", onclick: () => ask(s) }, s))),
-        el("div", { class: "card" }, el("h2", {}, "Tools it can use"),
-          TOOLS.map(([name, text]) => el("div", { class: "tool" }, el("div", { class: "mono" }, name), el("p", {}, text))),
-          el("hr"), el("h3", {}, "It will not"),
-          el("p", { class: "muted small" }, "Approve or change loans, run SQL, show personal data, or answer from memory without a tool result."))),
+        el("div", { class: "card" }, el("h2", {}, t("Try asking")),
+          // in the page's language: the assistant answers in the language of the question
+          SUGGESTIONS.map((s) => el("button", { class: "suggest", type: "button", onclick: () => ask(t(s)) }, t(s)))),
+        el("div", { class: "card" }, el("h2", {}, t("Tools it can use")),
+          TOOLS.map(([name, text]) => el("div", { class: "tool" }, el("div", { class: "mono" }, name), el("p", {}, t(text)))),
+          el("hr"), el("h3", {}, t("It will not")),
+          el("p", { class: "muted small" }, t("Approve or change loans, run SQL, show personal data, or answer from memory without a tool result.")))),
       chat));
   render();
 }
 
 function renderTurn(turn) {
   const bubble = el("div", { class: "bubble" }, turn.question);
-  if (turn.pending) return [bubble, el("div", { class: "card answer-card" }, el("p", { class: "muted" }, "Thinking…"))];
-  const secs = `${turn.seconds.toFixed(1)} s`;
+  if (turn.pending) return [bubble, el("div", { class: "card answer-card" }, el("p", { class: "muted" }, t("Thinking…")))];
+  const secs = `${nf1.format(turn.seconds)} s`;
   if (turn.error) {
     return [bubble, el("div", { class: "card answer-card" },
-      el("div", { class: "meta" }, el("span", { class: "badge unavailable" }, "Unavailable"), secs),
+      el("div", { class: "meta" }, el("span", { class: "badge unavailable" }, t("Unavailable")), secs),
       el("div", { class: "section" }, errorBox(turn.error)))];
   }
   const r = turn.result; // the AssistantAnswer of docs/contracts.md section 6, plus correlation_id
-  const calls = `${r.evidence.length} tool call${r.evidence.length === 1 ? "" : "s"}`;
+  const calls = tn(r.evidence.length, "{n} tool call", "{n} tool calls");
   const asOf = r.evidence[0]?.as_of_date;
   const status = {
-    answered: ["answered", "Answered", [secs, calls, asOf ? `data as of ${fmtDate(asOf)}` : null].filter(Boolean).join(" · ")],
-    refused: ["refused", "Refused", "Outside what the assistant can do"],
-    no_data: ["nodata", "No data", secs],
-    incomplete: ["incomplete", "Incomplete", `${secs} · stopped before a full answer`],
-  }[r.status] || ["nodata", "No data", secs];
+    answered: ["answered", t("Answered"), [secs, calls, asOf ? t("data as of {date}", { date: fmtDate(asOf) }) : null].filter(Boolean).join(" · ")],
+    refused: ["refused", t("Refused"), t("Outside what the assistant can do")],
+    no_data: ["nodata", t("No data"), secs],
+    incomplete: ["incomplete", t("Incomplete"), t("{secs} · stopped before a full answer", { secs })],
+  }[r.status] || ["nodata", t("No data"), secs];
   // With several tool calls the filters come per call ({"get_portfolio_kpi#1": {...}}): show them as plain tags too.
   const filterPairs = Object.entries(r.filters || {}).flatMap(([k, v]) => (v && typeof v === "object" ? Object.entries(v) : [[k, v]]));
-  const filterTags = [...new Set(filterPairs.map(([k, v]) => `${k}: ${v}`))].map((t) => el("span", { class: "tag" }, t));
-  const rounds = `${r.tool_rounds} tool round${r.tool_rounds === 1 ? "" : "s"}`;
+  const filterTags = [...new Set(filterPairs.map(([k, v]) => `${k}: ${v}`))].map((tag) => el("span", { class: "tag" }, tag));
+  const rounds = tn(r.tool_rounds, "{n} tool round", "{n} tool rounds");
 
   return [bubble, el("div", { class: "card answer-card" },
     el("div", { class: "meta" }, el("span", { class: `badge ${status[0]}` }, status[1]), status[2]),
     el("p", { class: "answer-text" }, r.answer),
     r.evidence.map(evidenceBlock),
     el("div", { class: "answer-facts" },
-      el("div", {}, el("h3", {}, "Filters applied"), filterTags.length ? filterTags : el("span", { class: "muted" }, "None")),
-      el("div", {}, el("h3", {}, "Source"), r.sources.length ? r.sources.map((s) => el("div", { class: "mono" }, s)) : el("span", { class: "muted" }, "No tool was run")),
-      el("div", {}, el("h3", {}, "Limitations"), r.limitations.length ? el("ul", {}, r.limitations.map((l) => el("li", {}, l))) : el("span", { class: "muted" }, "None"))),
+      el("div", {}, el("h3", {}, t("Filters applied")), filterTags.length ? filterTags : el("span", { class: "muted" }, t("None"))),
+      el("div", {}, el("h3", {}, t("Source")), r.sources.length ? r.sources.map((s) => el("div", { class: "mono" }, s)) : el("span", { class: "muted" }, t("No tool was run"))),
+      el("div", {}, el("h3", {}, t("Limitations")), r.limitations.length ? el("ul", {}, r.limitations.map((l) => el("li", {}, l))) : el("span", { class: "muted" }, t("None")))),
     traceToggle(r.trace),
-    el("div", { class: "trace" }, [`correlation id ${r.correlation_id || "–"}`, r.model, rounds].filter(Boolean).join(" · ")))];
+    el("div", { class: "trace" }, [t("correlation id {id}", { id: r.correlation_id || "–" }), r.model, rounds].filter(Boolean).join(" · ")))];
 }
 
 // Every tool call the assistant made, failed ones included, in order: closed until the user asks for it.
 function traceToggle(trace) {
   if (!trace?.length) return null;
-  const args = (a) => Object.entries(a || {}).map(([k, v]) => `${k} ${v}`).join(" · ") || "no arguments";
+  const args = (a) => Object.entries(a || {}).map(([k, v]) => `${k} ${v}`).join(" · ") || t("no arguments");
   const steps = el("ol", { class: "muted small", hidden: true }, trace.map((s) =>
-    el("li", {}, `${s.tool} (${args(s.arguments)}) · round ${s.round} · ${s.status === "success" ? "✓" : "✗ failed"}`)));
-  const label = (open) => `${open ? "Hide" : "Show"} trace (${trace.length} step${trace.length === 1 ? "" : "s"})`;
+    el("li", {}, `${s.tool} (${args(s.arguments)}) · ${t("round {n}", { n: s.round })} · ${s.status === "success" ? "✓" : t("✗ failed")}`)));
+  const label = (open) => (open
+    ? tn(trace.length, "Hide trace ({n} step)", "Hide trace ({n} steps)")
+    : tn(trace.length, "Show trace ({n} step)", "Show trace ({n} steps)"));
   const button = el("button", { class: "btn-ghost", type: "button", onclick: () => {
     steps.hidden = !steps.hidden;
     button.textContent = label(!steps.hidden);
@@ -485,8 +504,8 @@ function traceToggle(trace) {
 function evidenceBlock(e) {
   const [title, body] = evidenceContent(e.tool, e.result || {});
   return el("div", { class: "evidence" },
-    el("div", { class: "evidence-head" }, el("span", {}, `Evidence · ${title}`),
-      el("span", { class: "mono muted" }, [e.tool, e.source, e.as_of_date ? `as of ${fmtDate(e.as_of_date)}` : null].filter(Boolean).join(" · "))),
+    el("div", { class: "evidence-head" }, el("span", {}, t("Evidence · {title}", { title })),
+      el("span", { class: "mono muted" }, [e.tool, e.source, e.as_of_date ? t("as of {date}", { date: fmtDate(e.as_of_date) }) : null].filter(Boolean).join(" · "))),
     body);
 }
 
@@ -494,43 +513,47 @@ function evidenceBlock(e) {
 function evidenceContent(tool, res) {
   if (tool === "get_portfolio_kpi") {
     const unit = res.metric?.unit;
-    const group = res.group_by ? res.group_by[0].toUpperCase() + res.group_by.slice(1) : "Group";
-    return [res.metric?.label || "KPI", table([
-      { label: group, render: (row) => (row.group === "UNKNOWN" ? "UNKNOWN (invalid code)" : row.group ?? res.filters?.branch_code ?? "Whole portfolio") },
-      { label: "Value", num: true, render: (row) => fmt(row.value, unit, { compact: false }) },
+    const group = res.group_by ? t(res.group_by[0].toUpperCase() + res.group_by.slice(1)) : t("Group");
+    return [t(res.metric?.label || "KPI"), table([
+      { label: group, render: (row) => (row.group === "UNKNOWN" ? t("UNKNOWN (invalid code)") : row.group ?? res.filters?.branch_code ?? t("Whole portfolio")) },
+      { label: t("Value"), num: true, render: (row) => fmt(row.value, unit, { compact: false }) },
     ], res.rows || [])];
   }
   if (tool === "get_dq_exceptions") {
     const items = res.items || [];
     const total = res.total ?? items.length;
-    const count = total > items.length ? `${nf.format(total)} in total · first ${items.length} shown` : `${nf.format(total)} in total`;
-    return [`Data-quality exceptions · ${count}`, table([
-      { label: "Rule", cls: "mono", key: "rule_id" },
-      { label: "Action", key: "action" },
-      { label: "Description", key: "description" },
-      { label: "Branch", cls: "mono", key: "branch_code" },
+    const count = total > items.length
+      ? t("{total} in total · first {shown} shown", { total: nf.format(total), shown: items.length })
+      : t("{total} in total", { total: nf.format(total) });
+    return [t("Data-quality exceptions · {count}", { count }), table([
+      { label: t("Rule"), cls: "mono", key: "rule_id" },
+      { label: t("Action"), key: "action" },
+      { label: t("Description"), key: "description" },
+      { label: t("Branch"), cls: "mono", key: "branch_code" },
     ], items)];
   }
   if (tool === "get_connected_exposure") {
-    const summary = `${res.members} members · ${fmt(res.total_outstanding, "EUR", { compact: false })} outstanding · ${res.delinquent_loans} delinquent`;
-    return [`Connected exposure · ${summary}`, table([
-      { label: "Application", cls: "mono", key: "application_id" },
-      { label: "Customer", cls: "mono", render: (row) => nodeId(row.customer_node) },
-      { label: "Status", key: "status_code" },
-      { label: "Outstanding", num: true, render: (row) => fmt(row.outstanding_balance, "EUR", { compact: false }) },
-      { label: "30+ days late", render: (row) => (row.is_delinquent_30 ? "Yes" : "No") },
+    const summary = t("{members} members · {outstanding} outstanding · {late} delinquent", {
+      members: res.members, outstanding: fmt(res.total_outstanding, "EUR", { compact: false }), late: res.delinquent_loans,
+    });
+    return [t("Connected exposure · {summary}", { summary }), table([
+      { label: t("Application"), cls: "mono", key: "application_id" },
+      { label: t("Customer"), cls: "mono", render: (row) => nodeId(row.customer_node) },
+      { label: t("Status"), render: (row) => humanize(row.status_code) },
+      { label: t("Outstanding"), num: true, render: (row) => fmt(row.outstanding_balance, "EUR", { compact: false }) },
+      { label: t("30+ days late"), render: (row) => (row.is_delinquent_30 ? t("Yes") : t("No")) },
     ], res.applications || [])];
   }
   if (tool === "get_metadata") {
-    return ["Available KPIs", table([
-      { label: "KPI", key: "label" },
-      { label: "Unit", key: "unit" },
-      { label: "Definition", key: "definition" },
+    return [t("Available KPIs"), table([
+      { label: t("KPI"), render: (row) => t(row.label) },
+      { label: t("Unit"), key: "unit" },
+      { label: t("Definition"), render: (row) => t(row.definition) },
     ], res.metrics || [])];
   }
   // A tool this page doesn't know yet: show its plain values.
   const plain = Object.entries(res).filter(([, v]) => v === null || typeof v !== "object");
-  return [tool, table([{ label: "Field", key: "k" }, { label: "Value", key: "v" }], plain.map(([k, v]) => ({ k, v })))];
+  return [tool, table([{ label: t("Field"), key: "k" }, { label: t("Value"), key: "v" }], plain.map(([k, v]) => ({ k, v })))];
 }
 
 // ---------- Branches ----------
@@ -541,19 +564,19 @@ async function pageBranches(params, token, code) {
   const select = el("select", { onchange: (e) => go(`branches/${e.target.value}`) }, options(BRANCHES, code));
 
   const tiles = el("div", { class: "grid cols-4" }, KPIS().map((n) => tile(labelOf(n), "—", "", { compact: true })));
-  const funnel = el("div", { class: "card" }, el("div", { class: "card-head" }, el("h2", {}, "Application funnel")), loading());
-  const products = el("div", { class: "card" }, el("div", { class: "card-head" }, el("h2", {}, "Applications by product")), loading());
-  const approval = el("div", { class: "card" }, el("div", { class: "card-head" }, el("h2", {}, "Approval rate by product")), loading());
-  const delinquency = el("div", { class: "card" }, el("div", { class: "card-head" }, el("h2", {}, "Delinquency 30+ by product")), loading());
-  const dq = el("div", { class: "card section" }, loading("Counting data-quality exceptions…"));
+  const funnel = el("div", { class: "card" }, el("div", { class: "card-head" }, el("h2", {}, t("Application funnel"))), loading());
+  const products = el("div", { class: "card" }, el("div", { class: "card-head" }, el("h2", {}, t("Applications by product"))), loading());
+  const approval = el("div", { class: "card" }, el("div", { class: "card-head" }, el("h2", {}, t("Approval rate by product"))), loading());
+  const delinquency = el("div", { class: "card" }, el("div", { class: "card-head" }, el("h2", {}, t("Delinquency 30+ by product"))), loading());
+  const dq = el("div", { class: "card section" }, loading(t("Counting data-quality exceptions…")));
   const title = el("h1", {}, code);
   const sub = el("p", {}, "");
 
   fill(view,
-    el("div", { class: "crumbs" }, el("a", { href: "#/overview" }, "Overview"), " / Branches / ", code),
+    el("div", { class: "crumbs" }, el("a", { href: "#/overview" }, t("Overview")), ` / ${t("Branches")} / `, code),
     el("div", { class: "page-head" },
       el("div", {}, el("div", { class: "title" }, title, el("span", { class: "chip-code" }, code)), sub),
-      el("label", { class: "field" }, "Branch", select)),
+      el("label", { class: "field" }, t("Branch"), select)),
     tiles,
     el("div", { class: "grid cols-2 section" }, funnel, products),
     el("div", { class: "grid cols-2 section" }, approval, delinquency),
@@ -564,13 +587,15 @@ async function pageBranches(params, token, code) {
     summary = await api(`/branches/${encodeURIComponent(code)}/summary`);
   } catch (err) {
     if (token !== renderToken) return;
-    fill(view, el("div", { class: "crumbs" }, el("a", { href: "#/overview" }, "Overview"), " / Branches / ", code),
-      el("div", { class: "page-head" }, el("h1", {}, code), el("label", { class: "field" }, "Branch", select)), errorBox(err));
+    fill(view, el("div", { class: "crumbs" }, el("a", { href: "#/overview" }, t("Overview")), ` / ${t("Branches")} / `, code),
+      el("div", { class: "page-head" }, el("h1", {}, code), el("label", { class: "field" }, t("Branch"), select)), errorBox(err));
     return;
   }
   if (token !== renderToken) return;
   title.textContent = summary.branch_name;
-  sub.textContent = `${fmt(summary.kpis.applications, "count")} applications since 2016 · data as of ${fmtDate(summary.as_of_date)}`;
+  sub.textContent = t("{applications} applications since 2016 · data as of {date}", {
+    applications: fmt(summary.kpis.applications, "count"), date: fmtDate(summary.as_of_date),
+  });
 
   // KPI tiles with the portfolio for comparison: share of portfolio for totals, the portfolio value for rates
   portfolioKpis().catch(() => ({})).then((pf) => {
@@ -579,10 +604,10 @@ async function pageBranches(params, token, code) {
       const v = summary.kpis[n], p = pf?.[n]?.value, unit = unitOf(n);
       let note = "";
       if (typeof p === "number" && typeof v === "number") {
-        note = unit === "count" || unit === "EUR" ? `${((v / p) * 100).toFixed(1)}% of portfolio`
-          : `Portfolio ${unit === "days" ? p.toFixed(1) : fmt(p, unit)}`;
+        note = unit === "count" || unit === "EUR" ? t("{share} of portfolio", { share: pct.format(v / p) })
+          : t("Portfolio {value}", { value: unit === "days" ? nf1.format(p) : fmt(p, unit) });
       }
-      return tile(labelOf(n), fmt(v, unit), note, { compact: true, title: metrics[n].definition });
+      return tile(labelOf(n), fmt(v, unit), note, { compact: true, title: definitionOf(n) });
     }));
   });
 
@@ -592,17 +617,17 @@ async function pageBranches(params, token, code) {
     if (token !== renderToken) return;
     const a = appr.rows[0] || {}, d = del.rows[0] || {};
     funnel.lastChild.replaceWith(el("div", {}, hbars([
-      { label: "Submitted", value: summary.kpis.applications },
-      { label: "Decided", value: a.denominator },
-      { label: "Approved", value: a.numerator },
-      { label: "Active loans", value: d.denominator },
-      { label: "Delinquent 30+", value: d.numerator },
+      { label: t("Submitted"), value: summary.kpis.applications },
+      { label: t("Decided"), value: a.denominator },
+      { label: t("Approved"), value: a.numerator },
+      { label: t("Active loans"), value: d.denominator },
+      { label: t("Delinquent 30+"), value: d.numerator },
     ], { colors: ["#1f4e89", "#1f4e89", "#1f4e89", "#1f4e89", "#b45309"], format: (v) => fmt(v, "count") }),
-    el("p", { class: "note" }, "Decided = approved + rejected. Active loans are approved loans not yet paid off.")));
+    el("p", { class: "note" }, t("Decided = approved + rejected. Active loans are approved loans not yet paid off."))));
   }).catch((err) => token === renderToken && funnel.lastChild.replaceWith(errorBox(err)));
 
   const prodRows = (key) => summary.by_product
-    .map((p) => ({ label: PRODUCTS[p.product_code] || p.product_code, value: p.kpis[key] }))
+    .map((p) => ({ label: PRODUCTS[p.product_code] ? t(PRODUCTS[p.product_code]) : p.product_code, value: p.kpis[key] }))
     .sort((x, y) => (y.value ?? 0) - (x.value ?? 0));
   products.lastChild.replaceWith(hbars(prodRows("applications"), { color: "#4f7cb0", format: (v) => fmt(v, "count") }));
   approval.lastChild.replaceWith(hbars(prodRows("approval_rate"), { color: "#1f4e89", format: (v) => fmt(v, "ratio"), max: 1 }));
@@ -614,9 +639,9 @@ async function pageBranches(params, token, code) {
     if (token !== renderToken) return;
     fill(dq, el("div", { class: "banner" },
       el("span", { style: "color:var(--orange);font-size:1.2rem" }, "⚠"),
-      el("div", { class: "grow" }, el("strong", {}, `${nf.format(rej.total + flag.total)} data-quality exceptions`),
-        ` at this branch: ${nf.format(rej.total)} rejected, ${nf.format(flag.total)} flagged`),
-      el("a", { href: `#/quality?branch=${code}` }, "View in Data quality")));
+      el("div", { class: "grow" }, el("strong", {}, t("{n} data-quality exceptions", { n: nf.format(rej.total + flag.total) })),
+        t(" at this branch: {rejected} rejected, {flagged} flagged", { rejected: nf.format(rej.total), flagged: nf.format(flag.total) })),
+      el("a", { href: `#/quality?branch=${code}` }, t("View in Data quality"))));
   }).catch((err) => token === renderToken && fill(dq, errorBox(err)));
 }
 
@@ -630,28 +655,28 @@ async function pageQuality(params, token) {
   const update = (changes) => go("quality", { ...state, ...changes, offset: changes.offset ?? 0 });
 
   const tiles = el("div", { class: "grid cols-4" },
-    tile("Rule failures", "—", "One row per record and failed rule"),
-    tile("Rejected", "—", "Quarantined, kept out of Gold", { tone: "bad" }),
-    tile("Flagged", "—", "Kept in Gold with a warning", { tone: "warn" }),
-    tile("Rejected share", "—", "Rejected ÷ all rule failures"));
+    tile(t("Rule failures"), "—", t("One row per record and failed rule")),
+    tile(t("Rejected"), "—", t("Quarantined, kept out of Gold"), { tone: "bad" }),
+    tile(t("Flagged"), "—", t("Kept in Gold with a warning"), { tone: "warn" }),
+    tile(t("Rejected share"), "—", t("Rejected ÷ all rule failures")));
   const results = el("div", {}, loading());
 
-  const seg = el("div", { class: "segmented" }, [["", "All"], ["REJECT", "Reject"], ["FLAG", "Flag"]].map(([v, l]) =>
+  const seg = el("div", { class: "segmented" }, [["", t("All")], ["REJECT", t("Reject")], ["FLAG", t("Flag")]].map(([v, l]) =>
     el("button", { type: "button", class: state.action === v ? "on" : null, onclick: () => update({ action: v }) }, l)));
-  const ruleSel = el("select", { onchange: (e) => update({ rule: e.target.value }) }, el("option", { value: "" }, "All rules"), options(RULES, state.rule));
-  const branchSel = el("select", { onchange: (e) => update({ branch: e.target.value }) }, el("option", { value: "" }, "All branches"), options(BRANCHES, state.branch));
-  const batchIn = el("input", { value: state.batch, placeholder: "e.g. batch_001", size: 12 });
+  const ruleSel = el("select", { onchange: (e) => update({ rule: e.target.value }) }, el("option", { value: "" }, t("All rules")), options(RULES, state.rule));
+  const branchSel = el("select", { onchange: (e) => update({ branch: e.target.value }) }, el("option", { value: "" }, t("All branches")), options(BRANCHES, state.branch));
+  const batchIn = el("input", { value: state.batch, placeholder: t("e.g. batch_001"), size: 12 });
 
   fill(view,
-    head("Data-quality exceptions", "Records the pipeline rejected or flagged, with the rule that failed. Rejected records are kept out of the KPIs; customer records appear only by hashed key."),
+    head(t("Data-quality exceptions"), t("Records the pipeline rejected or flagged, with the rule that failed. Rejected records are kept out of the KPIs; customer records appear only by hashed key.")),
     tiles,
     el("div", { class: "card section" },
       el("form", { class: "filters", style: "margin-bottom:18px", onsubmit: (e) => { e.preventDefault(); update({ batch: batchIn.value.trim() }); } },
-        el("div", { class: "field" }, "Action", seg),
-        el("label", { class: "field" }, "Rule", ruleSel),
-        el("label", { class: "field" }, "Branch", branchSel),
-        el("label", { class: "field" }, "Batch", batchIn),
-        el("button", { class: "btn", type: "submit" }, "Search")),
+        el("div", { class: "field" }, t("Action"), seg),
+        el("label", { class: "field" }, t("Rule"), ruleSel),
+        el("label", { class: "field" }, t("Branch"), branchSel),
+        el("label", { class: "field" }, t("Batch"), batchIn),
+        el("button", { class: "btn", type: "submit" }, t("Search"))),
       results));
 
   // Headline totals (respect branch and batch, not action or rule)
@@ -662,7 +687,7 @@ async function pageQuality(params, token) {
     api(`/exceptions?${new URLSearchParams({ ...scope, ...x, limit: 1 })}`))).then(([all, rej, flag]) => {
     if (token !== renderToken) return;
     const values = [nf.format(all.total), nf.format(rej.total), nf.format(flag.total), all.total ? fmt(rej.total / all.total, "ratio") : "–"];
-    [...tiles.children].forEach((t, i) => { t.querySelector(".value").textContent = values[i]; });
+    [...tiles.children].forEach((node, i) => { node.querySelector(".value").textContent = values[i]; });
   }).catch(() => {});
 
   const q = { limit: PAGE_SIZE, offset: state.offset, ...scope };
@@ -674,21 +699,21 @@ async function pageQuality(params, token) {
     const last = Math.min(state.offset + res.items.length, res.total);
     fill(results,
       res.items.length ? table([
-        { label: "Record", cls: "mono", key: "record_key" },
-        { label: "Entity", render: (r) => r.entity.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()) },
-        { label: "Rule", cls: "mono", key: "rule_id" },
-        { label: "Reason", key: "description" },
-        { label: "Dimension", key: "dq_dimension" },
-        { label: "Action", render: (r) => el("span", { class: `pill ${r.action}` }, r.action) },
-        { label: "Branch", render: (r) => r.branch_code || "–" },
-        { label: "Batch", cls: "mono", render: (r) => r.source_batch_id || "–" },
-        { label: "Detected (UTC)", cls: "mono", render: (r) => fmtDateTime(r.detected_at) },
-      ], res.items, { framed: true }) : el("p", { class: "empty" }, "No exceptions match these filters."),
+        { label: t("Record"), cls: "mono", key: "record_key" },
+        { label: t("Entity"), render: (r) => humanize(r.entity) },
+        { label: t("Rule"), cls: "mono", key: "rule_id" },
+        { label: t("Reason"), key: "description" },
+        { label: t("Dimension"), render: (r) => (r.dq_dimension ? t(r.dq_dimension) : "–") },
+        { label: t("Action"), render: (r) => el("span", { class: `pill ${r.action}` }, r.action) },
+        { label: t("Branch"), render: (r) => r.branch_code || "–" },
+        { label: t("Batch"), cls: "mono", render: (r) => r.source_batch_id || "–" },
+        { label: t("Detected (UTC)"), cls: "mono", render: (r) => fmtDateTime(r.detected_at) },
+      ], res.items, { framed: true }) : el("p", { class: "empty" }, t("No exceptions match these filters.")),
       el("div", { class: "table-foot" },
-        el("span", {}, res.total ? `Showing ${state.offset + 1}–${last} of ${nf.format(res.total)} · from GET ` : "From GET ", el("code", {}, "/exceptions")),
+        el("span", {}, res.total ? t("Showing {from}–{to} of {total} · from GET ", { from: state.offset + 1, to: last, total: nf.format(res.total) }) : t("From GET "), el("code", {}, "/exceptions")),
         el("div", { style: "display:flex;gap:8px" },
-          el("button", { class: "btn-ghost", type: "button", disabled: state.offset === 0, onclick: () => update({ offset: Math.max(0, state.offset - PAGE_SIZE) }) }, "Previous"),
-          el("button", { class: "btn-ghost", type: "button", disabled: last >= res.total, onclick: () => update({ offset: state.offset + PAGE_SIZE }) }, "Next"))));
+          el("button", { class: "btn-ghost", type: "button", disabled: state.offset === 0, onclick: () => update({ offset: Math.max(0, state.offset - PAGE_SIZE) }) }, t("Previous")),
+          el("button", { class: "btn-ghost", type: "button", disabled: last >= res.total, onclick: () => update({ offset: state.offset + PAGE_SIZE }) }, t("Next")))));
   } catch (err) {
     if (token === renderToken) fill(results, errorBox(err));
   }
@@ -698,14 +723,14 @@ async function pageQuality(params, token) {
 
 async function pageExposure(params, token, id) {
   id = (id || "LA000225").toUpperCase();
-  const input = el("input", { value: id, pattern: "LA\\d{6}", size: 12, required: true, title: "LA followed by 6 digits" });
+  const input = el("input", { value: id, pattern: "LA\\d{6}", size: 12, required: true, title: t("LA followed by 6 digits") });
   const body = el("div", {}, loading());
 
   fill(view,
-    head("Connected exposure", "Follows the knowledge graph from one application to the applicant's household and every loan connected to it. Customers appear only by node key.",
+    head(t("Connected exposure"), t("Follows the knowledge graph from one application to the applicant's household and every loan connected to it. Customers appear only by node key."),
       el("form", { class: "filters", onsubmit: (e) => { e.preventDefault(); go(`exposure/${input.value.trim().toUpperCase()}`); } },
-        el("label", { class: "field" }, "Application ID", input),
-        el("button", { class: "btn", type: "submit" }, "Find exposure"))),
+        el("label", { class: "field" }, t("Application ID"), input),
+        el("button", { class: "btn", type: "submit" }, t("Find exposure")))),
     body);
 
   let res;
@@ -726,74 +751,74 @@ async function pageExposure(params, token, id) {
   const rows = [];
   for (const c of customers) {
     const loans = apps.filter((a) => a.customer_node === c);
-    rows.push({ kind: "customer", node: c, details: `${c === applicant ? "Applicant" : "Same household"} · ${loans.length} application${loans.length === 1 ? "" : "s"}`, outstanding: sum(loans) });
+    rows.push({ kind: "customer", node: c, details: `${c === applicant ? t("Applicant") : t("Same household")} · ${tn(loans.length, "{n} application", "{n} applications")}`, outstanding: sum(loans) });
     for (const l of loans) rows.push({ kind: "loan", ...l });
   }
 
   fill(body,
     el("div", { class: "grid cols-4" },
-      tile("Household outstanding", fmt(res.total_outstanding, "EUR", { compact: false }), "Across all connected applications"),
-      tile("Connected customers", nf.format(res.members), "Including the applicant"),
-      tile("Connected applications", nf.format(apps.length), "Of every household member"),
-      tile("Delinquent 30+", nf.format(res.delinquent_loans), late.length ? late.map((l) => l.application_id).join(", ") : "None", { tone: res.delinquent_loans ? "warn" : "" })),
+      tile(t("Household outstanding"), fmt(res.total_outstanding, "EUR", { compact: false }), t("Across all connected applications")),
+      tile(t("Connected customers"), nf.format(res.members), t("Including the applicant")),
+      tile(t("Connected applications"), nf.format(apps.length), t("Of every household member")),
+      tile(t("Delinquent 30+"), nf.format(res.delinquent_loans), late.length ? late.map((l) => l.application_id).join(", ") : t("None"), { tone: res.delinquent_loans ? "warn" : "" })),
     el("div", { class: "card section" },
-      el("div", { class: "card-head" }, el("h2", {}, "Graph path"), el("span", { class: "src" }, "kg_nodes · kg_edges")),
+      el("div", { class: "card-head" }, el("h2", {}, t("Graph path")), el("span", { class: "src" }, "kg_nodes · kg_edges")),
       el("div", { class: "path" },
-        el("span", { class: "step first" }, `Application ${res.application_id}`), el("span", { class: "arrow" }, "→"),
-        el("span", { class: "step" }, `Customer ${short(nodeId(applicant))}`), el("span", { class: "arrow" }, "→"),
-        el("span", { class: "step hh" }, "Household"), el("span", { class: "arrow" }, "→"),
-        el("span", { class: "step" }, `${customers.length - 1} more customer${customers.length === 2 ? "" : "s"}`), el("span", { class: "arrow" }, "→"),
-        el("span", { class: "step" }, `${apps.length - 1} more application${apps.length === 2 ? "" : "s"}`)),
+        el("span", { class: "step first" }, t("Application {id}", { id: res.application_id })), el("span", { class: "arrow" }, "→"),
+        el("span", { class: "step" }, t("Customer {id}", { id: short(nodeId(applicant)) })), el("span", { class: "arrow" }, "→"),
+        el("span", { class: "step hh" }, t("Household")), el("span", { class: "arrow" }, "→"),
+        el("span", { class: "step" }, tn(customers.length - 1, "{n} more customer", "{n} more customers")), el("span", { class: "arrow" }, "→"),
+        el("span", { class: "step" }, tn(apps.length - 1, "{n} more application", "{n} more applications"))),
       table([
-        { label: "Node", render: (r) => r.kind === "customer"
-          ? [el("span", { class: "elbow" }), el("span", { class: "pill node" }, "Customer"), " ", el("span", { class: "mono" }, short(nodeId(r.node)))]
-          : el("span", { class: "indent-1" }, el("span", { class: "elbow" }), el("span", { class: "pill node" }, "Application"), " ",
-            el("span", { class: "mono" }, r.application_id), r.application_id === res.application_id ? [" ", el("span", { class: "pill start" }, "Start")] : null) },
-        { label: "Details", render: (r) => (r.kind === "customer" ? r.details : (r.status_code || "–").replace(/_/g, " ").toLowerCase().replace(/^./, (c) => c.toUpperCase())) },
-        { label: "Outstanding", num: true, cls: "mono", render: (r) => fmt(r.kind === "customer" ? r.outstanding : r.outstanding_balance, "EUR", { compact: false }) },
-        { label: "Status", render: (r) => (r.kind === "customer" ? "" : r.is_delinquent_30 ? el("span", { class: "pill late" }, "30+ days past due") : r.status_code === "APPROVED" ? el("span", { class: "status-ok" }, "Current") : "–") },
+        { label: t("Node"), render: (r) => r.kind === "customer"
+          ? [el("span", { class: "elbow" }), el("span", { class: "pill node" }, t("Customer")), " ", el("span", { class: "mono" }, short(nodeId(r.node)))]
+          : el("span", { class: "indent-1" }, el("span", { class: "elbow" }), el("span", { class: "pill node" }, t("Application")), " ",
+            el("span", { class: "mono" }, r.application_id), r.application_id === res.application_id ? [" ", el("span", { class: "pill start" }, t("Start"))] : null) },
+        { label: t("Details"), render: (r) => (r.kind === "customer" ? r.details : humanize(r.status_code)) },
+        { label: t("Outstanding"), num: true, cls: "mono", render: (r) => fmt(r.kind === "customer" ? r.outstanding : r.outstanding_balance, "EUR", { compact: false }) },
+        { label: t("Status"), render: (r) => (r.kind === "customer" ? "" : r.is_delinquent_30 ? el("span", { class: "pill late" }, t("30+ days past due")) : r.status_code === "APPROVED" ? el("span", { class: "status-ok" }, t("Current")) : "–") },
       ], rows, { framed: true, cls: "tree" }),
-      el("div", { class: "table-foot" }, el("span", {}, "From GET ", el("code", {}, `/graph/applications/${res.application_id}/connected-exposure`)),
-        el("span", {}, `Data as of ${fmtDate(res.as_of_date)}`))));
+      el("div", { class: "table-foot" }, el("span", {}, t("From GET "), el("code", {}, `/graph/applications/${res.application_id}/connected-exposure`)),
+        el("span", {}, t("Data as of {date}", { date: fmtDate(res.as_of_date) })))));
 }
 
 // ---------- Status ----------
 
 async function pageStatus(params, token) {
-  const health = el("div", { class: "card" }, el("div", { class: "card-head" }, el("h2", {}, "Service"), el("span", { class: "src" }, "GET /health")), loading());
-  const ready = el("div", { class: "card" }, el("div", { class: "card-head" }, el("h2", {}, "Data"), el("span", { class: "src" }, "GET /ready")), loading());
-  const connection = el("div", { class: "card section" }, el("div", { class: "card-head" }, el("h2", {}, "Your connection")),
+  const health = el("div", { class: "card" }, el("div", { class: "card-head" }, el("h2", {}, t("Service")), el("span", { class: "src" }, "GET /health")), loading());
+  const ready = el("div", { class: "card" }, el("div", { class: "card-head" }, el("h2", {}, t("Data")), el("span", { class: "src" }, "GET /ready")), loading());
+  const connection = el("div", { class: "card section" }, el("div", { class: "card-head" }, el("h2", {}, t("Your connection"))),
     el("dl", { class: "facts" },
-      el("dt", {}, "Credential"), el("dd", {}, useSignIn
-        ? (auth.account() ? `Microsoft sign-in (${auth.account().username})` : "Not signed in")
-        : (apiKey.value ? "API key" : "None")),
-      el("dt", {}, "Kept"), el("dd", {}, "In this browser tab only (sessionStorage)"),
-      el("dt", {}, "API reference"), el("dd", {}, el("a", { href: "/docs" }, "Swagger UI at /docs"))),
+      el("dt", {}, t("Credential")), el("dd", {}, useSignIn
+        ? (auth.account() ? t("Microsoft sign-in ({user})", { user: auth.account().username }) : t("Not signed in"))
+        : (apiKey.value ? t("API key") : t("None"))),
+      el("dt", {}, t("Kept")), el("dd", {}, t("In this browser tab only (sessionStorage)")),
+      el("dt", {}, t("API reference")), el("dd", {}, el("a", { href: "/docs" }, t("Swagger UI at /docs")))),
     el("div", { style: "margin-top:16px" }, useSignIn
       ? (auth.account()
-        ? el("button", { class: "btn-ghost", type: "button", onclick: signOut }, "Sign out")
-        : el("button", { class: "btn", type: "button", onclick: signIn }, "Sign in with Microsoft"))
-      : el("button", { class: "btn-ghost", type: "button", onclick: () => askForKey() }, "Change API key")));
-  fill(view, head("Status", "Is the API up, can it reach the Gold layer, and how fresh is the data."), el("div", { class: "grid cols-2" }, health, ready), connection);
+        ? el("button", { class: "btn-ghost", type: "button", onclick: signOut }, t("Sign out"))
+        : el("button", { class: "btn", type: "button", onclick: signIn }, t("Sign in with Microsoft")))
+      : el("button", { class: "btn-ghost", type: "button", onclick: () => askForKey() }, t("Change API key"))));
+  fill(view, head(t("Status"), t("Is the API up, can it reach the Gold layer, and how fresh is the data.")), el("div", { class: "grid cols-2" }, health, ready), connection);
 
   try {
     const h = await fetch("/health").then((r) => r.json());
     if (token !== renderToken) return;
     health.lastChild.replaceWith(el("dl", { class: "facts" },
-      el("dt", {}, "Status"), el("dd", {}, h.status), el("dt", {}, "Environment"), el("dd", {}, h.environment),
-      el("dt", {}, "Version"), el("dd", { class: "mono" }, h.version)));
-  } catch { health.lastChild.replaceWith(errorBox(new ApiError(0, { code: "network_error", message: "The API could not be reached." }))); }
+      el("dt", {}, t("Status")), el("dd", {}, h.status), el("dt", {}, t("Environment")), el("dd", {}, h.environment),
+      el("dt", {}, t("Version")), el("dd", { class: "mono" }, h.version)));
+  } catch { health.lastChild.replaceWith(errorBox(new ApiError(0, { code: "network_error", message: t("The API could not be reached.") }))); }
 
   if (!connected()) { // nothing to check without a credential, and a 401 here would only show the dialog
-    ready.lastChild.replaceWith(el("p", { class: "muted" }, useSignIn ? "Sign in to check the data connection." : "Enter an API key to check the data connection."));
+    ready.lastChild.replaceWith(el("p", { class: "muted" }, useSignIn ? t("Sign in to check the data connection.") : t("Enter an API key to check the data connection.")));
     return;
   }
   try {
     const r = await api("/ready");
     if (token !== renderToken) return;
     ready.lastChild.replaceWith(el("dl", { class: "facts" },
-      el("dt", {}, "Warehouse"), el("dd", {}, "Reachable"), el("dt", {}, "Data as of"), el("dd", {}, fmtDate(r.as_of_date)),
-      el("dt", {}, "Refreshed"), el("dd", { class: "mono" }, fmtDateTime(r.refreshed_at) + " UTC")));
+      el("dt", {}, t("Warehouse")), el("dd", {}, t("Reachable")), el("dt", {}, t("Data as of")), el("dd", {}, fmtDate(r.as_of_date)),
+      el("dt", {}, t("Refreshed")), el("dd", { class: "mono" }, fmtDateTime(r.refreshed_at) + " UTC")));
   } catch (err) { if (token === renderToken) ready.lastChild.replaceWith(errorBox(err)); }
 }
 
@@ -817,16 +842,16 @@ function route() {
   window.scrollTo(0, 0);
   if (!connected() && name !== "status") {
     if (useSignIn) {
-      fill(view, head("Sign in", "Use your athtech Microsoft account. Team 2 members only."),
+      fill(view, head(t("Sign in"), t("Use your athtech Microsoft account. Team 2 members only.")),
         el("div", { class: "card" },
           signInMessage ? el("div", { class: "alert error" }, signInMessage) : null,
-          el("p", {}, "This dashboard reads everything through the Loan Analytics API, which accepts only signed-in Team 2 members on this environment."),
-          el("button", { class: "btn", type: "button", onclick: signIn }, "Sign in with Microsoft")));
+          el("p", {}, t("This dashboard reads everything through the Loan Analytics API, which accepts only signed-in Team 2 members on this environment.")),
+          el("button", { class: "btn", type: "button", onclick: signIn }, t("Sign in with Microsoft"))));
       return;
     }
-    fill(view, head("Connect to the API", "Enter an API key to load the data."),
-      el("div", { class: "card" }, el("p", {}, "This dashboard reads everything through the Loan Analytics API, and every data route needs a credential."),
-        el("button", { class: "btn", type: "button", onclick: () => askForKey() }, "Enter API key")));
+    fill(view, head(t("Connect to the API"), t("Enter an API key to load the data.")),
+      el("div", { class: "card" }, el("p", {}, t("This dashboard reads everything through the Loan Analytics API, and every data route needs a credential.")),
+        el("button", { class: "btn", type: "button", onclick: () => askForKey() }, t("Enter API key"))));
     askForKey();
     return;
   }
@@ -838,9 +863,9 @@ async function loadHeader() {
   if (!connected()) { $("as-of").textContent = ""; return; }
   try {
     const r = await api("/ready");
-    $("as-of").textContent = `Data as of ${fmtDate(r.as_of_date)}`;
+    $("as-of").textContent = t("Data as of {date}", { date: fmtDate(r.as_of_date) });
   } catch (err) {
-    $("as-of").textContent = err.code === "data_unavailable" ? "Warehouse unavailable" : "";
+    $("as-of").textContent = err.code === "data_unavailable" ? t("Warehouse unavailable") : "";
   }
 }
 
@@ -867,7 +892,7 @@ function initKeyDialog() {
 // The header shows either the API-key button (dev, local) or the Microsoft sign-in state (prod).
 function updateAuthUi() {
   $("key-button").hidden = useSignIn;
-  $("key-label").textContent = apiKey.value ? "Key set" : "Connect";
+  $("key-label").textContent = apiKey.value ? t("Key set") : t("Connect");
   $("signin-area").hidden = !useSignIn;
   if (!useSignIn) return;
   const account = connected() ? auth.account() : null;
@@ -904,8 +929,27 @@ async function signOut() {
   route();
 }
 
+// The EN / ΕΛ switch in the top bar: re-draws the header and the current page in place, so the
+// sign-in, the API key and the assistant conversation stay as they are.
+function initLanguageSwitch() {
+  const sw = $("lang-switch");
+  const sync = () => sw.setAttribute("aria-checked", String(i18n.lang === "el"));
+  sw.addEventListener("click", () => {
+    i18n.set(i18n.lang === "el" ? "en" : "el");
+    makeFormatters();
+    i18n.applyStatic();
+    sync();
+    updateAuthUi();
+    loadHeader();
+    route();
+  });
+  sync();
+}
+
 async function main() {
   if (auth.inPopup) return; // the sign-in popup: MSAL in the opening window reads the response
+  i18n.applyStatic();
+  initLanguageSwitch();
   const health = await fetch("/health").then((r) => r.json()).catch(() => ({}));
   const badge = $("env-badge");
   badge.textContent = (health.environment || "").toUpperCase();

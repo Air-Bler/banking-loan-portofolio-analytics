@@ -15,27 +15,32 @@
         Loan Portfolio Analytics
       </a>
       <nav class="nav">
-        <a href="#/overview" data-page="overview">Overview</a>
-        <a href="#/assistant" data-page="assistant">Assistant</a>
-        <a href="#/branches" data-page="branches">Branches</a>
-        <a href="#/quality" data-page="quality">Data quality</a>
-        <a href="#/exposure" data-page="exposure">Exposure graph</a>
-        <a href="#/status" data-page="status">Status</a>
+        <a href="#/overview" data-page="overview" data-i18n="Overview">Overview</a>
+        <a href="#/assistant" data-page="assistant" data-i18n="Assistant">Assistant</a>
+        <a href="#/branches" data-page="branches" data-i18n="Branches">Branches</a>
+        <a href="#/quality" data-page="quality" data-i18n="Data quality">Data quality</a>
+        <a href="#/exposure" data-page="exposure" data-i18n="Exposure graph">Exposure graph</a>
+        <a href="#/status" data-page="status" data-i18n="Status">Status</a>
       </nav>
       <div class="env">
+        <!-- EN / ΕΛ: aria-checked="true" means Greek -->
+        <button id="lang-switch" class="lang-switch" type="button" role="switch" aria-checked="false"
+                aria-label="Ελληνικά / English" data-i18n-title="Language" title="Language">
+          <span class="lang-opt">EN</span><span class="lang-track"><span class="lang-thumb"></span></span><span class="lang-opt">ΕΛ</span>
+        </button>
         <span id="env-badge" class="env-badge" hidden></span>
         <span id="as-of" class="as-of"></span>
-        <button id="key-button" class="key-button" type="button" title="API key">
+        <button id="key-button" class="key-button" type="button" title="API key" data-i18n-title="API key">
           <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="5" cy="8" r="3" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M8 8h7M12.5 8v2.5M14.5 8v2" stroke="currentColor" stroke-width="1.5"/></svg>
           <span id="key-label">Connect</span>
         </button>
         <div id="signin-area" class="signin-area" hidden>
           <button id="signin-button" class="key-button" type="button">
             <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="#f25022" d="M1 1h6.5v6.5H1z"/><path fill="#7fba00" d="M8.5 1H15v6.5H8.5z"/><path fill="#00a4ef" d="M1 8.5h6.5V15H1z"/><path fill="#ffb900" d="M8.5 8.5H15V15H8.5z"/></svg>
-            Sign in with Microsoft
+            <span data-i18n="Sign in with Microsoft">Sign in with Microsoft</span>
           </button>
-          <span id="signed-in" class="signed-in" hidden>Signed in as <strong id="user-name"></strong></span>
-          <button id="signout-button" class="key-button" type="button" hidden>Sign out</button>
+          <span id="signed-in" class="signed-in" hidden><span data-i18n="Signed in as">Signed in as</span> <strong id="user-name"></strong></span>
+          <button id="signout-button" class="key-button" type="button" hidden data-i18n="Sign out">Sign out</button>
         </div>
       </div>
     </div>
@@ -45,23 +50,22 @@
 
   <dialog id="key-dialog">
     <form id="key-form" method="dialog">
-      <h2>Connect to the API</h2>
-      <p class="muted">The data routes need an API key on this environment. It is sent with every request
-        from this tab and is forgotten when you close it.</p>
+      <h2 data-i18n="Connect to the API">Connect to the API</h2>
+      <p class="muted" data-i18n="The data routes need an API key on this environment. It is sent with every request from this tab and is forgotten when you close it.">The data routes need an API key on this environment. It is sent with every request from this tab and is forgotten when you close it.</p>
       <div id="key-message"></div>
-      <label class="field">API key
+      <label class="field"><span data-i18n="API key">API key</span>
         <input id="key-value" type="password" autocomplete="off" required>
       </label>
-      <p class="muted small">Local: the value of <code>API_KEYS</code> in your <code>.env</code>.
-        Dev: the Key Vault secret <code>api-keys-dev</code>.</p>
+      <p class="muted small" data-i18n="Local: the value of API_KEYS in your .env. Dev: the Key Vault secret api-keys-dev.">Local: the value of API_KEYS in your .env. Dev: the Key Vault secret api-keys-dev.</p>
       <div class="dialog-actions">
-        <button id="key-cancel" type="button" class="btn-ghost">Cancel</button>
-        <button type="submit" class="btn">Connect</button>
+        <button id="key-cancel" type="button" class="btn-ghost" data-i18n="Cancel">Cancel</button>
+        <button type="submit" class="btn" data-i18n="Connect">Connect</button>
       </div>
     </form>
   </dialog>
 
   <script src="vendor/msal-browser-3.30.0.min.js"></script>
+  <script src="i18n.js"></script>
   <script src="auth.js"></script>
   <script src="app.js"></script>
 </body>

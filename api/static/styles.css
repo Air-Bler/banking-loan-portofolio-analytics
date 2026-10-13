@@ -45,6 +45,14 @@ code, .mono { font-family: var(--mono); font-size: .88em; }
 .env { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px 12px; white-space: nowrap; font-size: .85rem; color: #dfe5eb; }
 .env-badge { background: #f3c78f; color: #3b2300; font-weight: 700; font-size: .72rem; padding: 3px 7px; border-radius: 4px; }
 .key-button { display: flex; gap: 6px; align-items: center; background: transparent; color: #dfe5eb; border: 1px solid #3a4858; border-radius: 6px; padding: 5px 9px; font: inherit; font-size: .82rem; cursor: pointer; }
+/* Language switch: EN ◯ ΕΛ, the thumb on the right means Greek */
+.lang-switch { display: flex; align-items: center; gap: 6px; background: transparent; border: none; color: #8ea0b3; font: inherit; font-size: .78rem; font-weight: 700; cursor: pointer; padding: 4px 2px; }
+.lang-switch .lang-track { position: relative; width: 30px; height: 16px; border-radius: 999px; background: #3a4858; transition: background .15s; }
+.lang-switch .lang-thumb { position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; transition: left .15s; }
+.lang-switch[aria-checked="true"] .lang-thumb { left: 16px; }
+.lang-switch[aria-checked="true"] .lang-track { background: #4f7cb0; }
+.lang-switch[aria-checked="false"] .lang-opt:first-child, .lang-switch[aria-checked="true"] .lang-opt:last-child { color: #fff; }
+.lang-switch:focus-visible { outline: 2px solid #6c9cf0; outline-offset: 2px; border-radius: 4px; }
 .signin-area { display: flex; align-items: center; gap: 10px; }
 .signed-in { color: #dfe5eb; }
 .signed-in strong { color: #fff; font-weight: 600; display: inline-block; max-width: 180px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
