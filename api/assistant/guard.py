@@ -2,8 +2,9 @@
 
 Pure code. The prompt also tells the model to refuse, but a refusal must not depend on the model alone. Refused:
 an empty, oversized or letterless question ("{}", "???"), a question about self-harm (answered with a short supportive
-message, see support_message), prompt injection, raw SQL or table access, a request to change something (approve,
-delete, update ...) and a request for personal data (phone, IBAN, names of customers ...).
+message, see support_message), prompt injection, raw SQL or table access, a request for a password, key or token, a
+request to change something (approve, delete, update ...) and a request for personal data (phone, IBAN, names of
+customers ...).
 Analytical questions pass: an action verb must open a sentence and be followed by a banking object, so
 "change in approval rate", "how many applications were approved" and "Ποιο κατάστημα έχει το χαμηλότερο approval rate"
 are fine.
@@ -63,7 +64,8 @@ def support_message(question: str) -> str:
 _INJECTION = _rx(
     r"\b(?:ignore|disregard|forget|bypass)\b.{0,40}\b(?:instructions?|prompts?|guidelines?|restrictions?|safeguards?|rules)\b"
     r"|\b(?:αγνοησ\w*|ξεχασ\w*|παρακαμψ\w*)\b.{0,40}\b(?:οδηγι\w*|κανον\w*|εντολ\w*|περιορισμ\w*)"
-    r"|\b(?:system|developer|hidden|initial) prompts?\b|\bprompt (?:injection|leak)\b"
+    r"|\b(?:system|developer|hidden|initial) (?:prompts?|instructions?|messages?)\b|\bprompt (?:injection|leak)\b"
+    r"|\brepeat\b.{0,30}\b(?:text|words|message|everything) above\b"
     r"|\b(?:reveal|show|print|repeat|display)\b.{0,20}\b(?:your|the) (?:instructions|prompt|rules)\b"
     r"|\b(?:εμφανισε|δειξε|αποκαλυψε)\b.{0,20}\b(?:οδηγιεσ|prompt|κανονεσ)\b"
     r"|\byou are now\b|\bact as (?:if|an? |the )|\bpretend (?:to be|you)|\bjailbreak\b|\bdeveloper mode\b|\bdan mode\b"
@@ -77,6 +79,14 @@ _SQL = _rx(
     r"|\bselect\b.+\bfrom\b|\bdrop\s+(?:table|database|schema)\b|\bdelete\s+from\b|\binsert\s+into\b|\bupdate\s+\w+\s+set\b"
     r"|\btruncate\s+table\b|\balter\s+table\b|\bunion\s+select\b|;\s*(?:drop|delete|insert|update|alter)\b|--\s|/\*"
     r"|\b(?:fact|dim|kpi|bronze|silver|kg)_\w+"
+)
+
+# ---- credentials ----------------------------------------------------------------------------------------------------------------
+# Nothing here can reach a secret, but a question asking for one is not a portfolio question and is refused up front.
+_SECRETS = _rx(
+    r"\b(?:passwords?|passcodes?|api[- ]?keys?|secret keys?|private keys?|client secrets?|connection strings?|credentials?)\b"
+    r"|\b(?:databricks|azure|openai|api|access|auth\w*|bearer|secret) (?:tokens?|keys?)\b"
+    r"|\bκωδικοσ προσβασησ\b|\bδιαπιστευτηρια\b|\bκλειδι (?:api|προσβασησ)\b"
 )
 
 # ---- requests to change something ---------------------------------------------------------------------------------------------
@@ -102,6 +112,11 @@ _OBJECT = _rx(
     r"|\b(?:la\d+|cu\d+|c\d{4,})\b"
     r"|\b(?:αιτησ\w*|πελατ\w*|δανει\w*|λογαριασμ\w*|επιτοκ\w*|ορι\w*|εγγραφ\w*|πινακ\w*|δεδομεν\w*|αποφασ\w*|πιστ\w*|"
     r"δοσ\w*|καταστημ\w*|προιον\w*|υπολοιπ\w*|εξαιρεσ\w*|ενυποθηκ\w*|οφειλ\w*)"
+)
+# "mark LA000225 as approved", "make the loan rejected": the verb is not at the start of the sentence or has no usual object
+_STATUS_CHANGE = _rx(
+    r"\b(?:mark|make)\b.{0,40}\b(?:la\d{6}|applications?|loans?)\b.{0,30}"
+    r"\b(?:approved|rejected|declined|paid|closed|cancelled|canceled|delinquent|active)\b"
 )
 # a noun that only looks like a verb at the start: "change in approval rate", "αύξηση του ποσοστού"
 _ANALYTICAL_LEAD = _rx(
@@ -150,7 +165,9 @@ def check_question(question: str) -> str | None:
         return "prompt injection"
     if _SQL.search(text):
         return "raw SQL request"
-    if any(_is_action(s.strip()) for s in re.split(r"[.!?;\n]+", text) if s.strip()):
+    if _SECRETS.search(text):
+        return "credentials request"
+    if _STATUS_CHANGE.search(text) or any(_is_action(s.strip()) for s in re.split(r"[.!?;\n]+", text) if s.strip()):
         return "action request"
     if _PII_STRONG.search(text) or _WHO_IS.search(text):
         return "personal data"
