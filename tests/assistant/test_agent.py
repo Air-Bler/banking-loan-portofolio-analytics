@@ -7,9 +7,10 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 
 from api.assistant import answer
 from api.assistant.graph import REFUSAL, build_graph
+from api.assistant.guard import support_message
 from api.errors import AssistantUnavailable, DataUnavailable
 from tests.api.fakes import FakeRepository
-from tests.assistant.scripted_llm import ScriptedLLM, call, draft, final
+from tests.assistant.scripted_llm import ScriptedLLM, call, content_filter, draft, final
 
 KPI = {"metric": "approval_rate", "group_by": "branch"}
 GOOD = "Both branches approved 60% of decided applications (60 of 100)."  # FakeRepository: 0.6, 60 / 100
@@ -170,6 +171,37 @@ def test_refusal_without_numbers_keeps_the_model_wording():
     out = answer("order pizza", FakeRepository(), ScriptedLLM(responses=final("refused", wording)))
 
     assert out.status == "refused" and out.answer == wording
+
+
+@pytest.mark.parametrize("question", ["should I kill myself?", "θέλω να πεθάνω"])
+def test_self_harm_gets_the_supportive_message_without_calling_the_model(question):
+    llm = ScriptedLLM(responses=[])
+    out = answer(question, FakeRepository(), llm)
+
+    assert llm.seen == []
+    assert out.status == "refused" and out.answer == support_message(question) and "1018" in out.answer
+    assert out.limitations == [] and out.evidence == []
+
+
+def test_content_filter_is_a_refusal_not_an_outage():
+    out = answer("Describe a violent robbery at a branch", FakeRepository(), ScriptedLLM(responses=[content_filter()]))
+
+    assert out.status == "refused" and out.answer == REFUSAL
+    assert any("content filter" in lim for lim in out.limitations)
+
+
+def test_content_filter_for_self_harm_gets_the_supportive_message():
+    question = "nothing matters any more"  # the guard does not catch it; Azure's filter does
+    out = answer(question, FakeRepository(), ScriptedLLM(responses=[content_filter("self_harm")]))
+
+    assert out.status == "refused" and out.answer == support_message(question) and out.limitations == []
+
+
+def test_other_bad_requests_are_still_assistant_unavailable():
+    response = httpx.Response(400, request=httpx.Request("POST", "https://oai-test.openai.azure.com/"))
+    error = openai.BadRequestError("bad request", response=response, body={"code": "invalid_request"})
+    with pytest.raises(AssistantUnavailable):
+        answer("Approval rate by branch?", FakeRepository(), ScriptedLLM(responses=[error]))
 
 
 def test_several_tool_calls_in_one_reply_each_get_a_tool_message():
