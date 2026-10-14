@@ -35,7 +35,8 @@ def test_every_question_is_well_formed():
     assert len(items) >= 20
     assert len({i["question"] for i in items}) == len(items)
     for item in items:
-        assert set(item) <= {"question", "tool", "status", "demo"}, item
+        assert set(item) <= {"question", "tool", "status", "demo", "grounding"}, item
+        assert item.get("grounding", "lenient") == "lenient", item
         expected = item["status"] if isinstance(item["status"], list) else [item["status"]]
         assert set(expected) <= STATUSES, item
         assert not item.get("tool") or item["tool"] in TOOLS, item
@@ -82,6 +83,17 @@ def test_a_replaced_answer_is_a_failure():
     item = {"question": "q", "status": "answered"}
     note = f"The model's wording contained {GROUNDING_NOTE} (71%), so it was replaced by the raw results."
     assert judge(item, answer_of(limitations=[note])) == ["grounding replaced the model's wording"]
+
+
+def test_a_lenient_question_accepts_a_replaced_answer():
+    note = f"The model's wording contained {GROUNDING_NOTE} (25.8), so it was replaced by the raw results."
+    strict = {"question": "q", "status": "answered"}
+    lenient = {"question": "q", "status": "answered", "grounding": "lenient"}
+    assert judge(strict, answer_of(limitations=[note])) == ["grounding replaced the model's wording"]
+    assert judge(lenient, answer_of(limitations=[note])) == []
+    problems = judge(lenient, answer_of(status="refused", tools=(), evidence=False, limitations=[note]))
+    assert "status refused, expected answered" in problems  # a lenient question still has to get the right status
+    assert "grounding replaced the model's wording" not in problems
 
 
 def test_the_grounding_note_matches_what_the_graph_writes():
