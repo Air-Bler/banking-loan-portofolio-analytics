@@ -308,7 +308,7 @@ dependencies and no CDN. It ships in the same container, so every deploy updates
 |---|---|---|---|---|
 | local, real Gold | Platform, Data, Errors | 17 | 52 | 0 |
 | dev | Platform, Data, Errors | 17 | 52 | 0 |
-| local, `FakeRepository` and the real Azure OpenAI model | Assistant | 4 | 12 | 0 |
+| local, `FakeRepository` and the real Azure OpenAI model | Assistant | 6 | 18 | 0 |
 
 ## What is mocked
 

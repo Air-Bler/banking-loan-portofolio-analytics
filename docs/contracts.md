@@ -201,13 +201,13 @@ shows the standard refusal instead. `correlation_id` is added by the route.
 | `status` | When |
 |---|---|
 | `answered` | the tools returned data and the answer uses it |
-| `refused` | an action, raw SQL, personal data, prompt injection or an off-topic question; refused before the model is called when the code can tell |
-| `no_data` | the tools returned nothing usable (unknown ID, empty filter such as a KPI with no rows for an unknown branch, Databricks down during a tool call), or the model answered without any data |
+| `refused` | an action, raw SQL, personal data, prompt injection or an off-topic question; refused before the model is called when the code can tell. A question about self-harm gets a short supportive message with help lines (1018, 112) and no limitation. A question that Azure's content filter blocks is also `refused` (200), not a 503 |
+| `no_data` | the tools returned nothing usable (unknown ID, empty filter such as a KPI with no rows for an unknown branch, Databricks down during a tool call), a metric or breakdown that does not exist (e.g. rejection rate, customer segment: the answer names the closest one, with no figures), or the model answered without any data |
 | `incomplete` | the model was still asking for tools after 3 rounds |
 
 Failures that are not an answer use the error format of section 5: `503 data_unavailable` when
 Databricks is down before the model is asked, `503 assistant_unavailable` when an `AZURE_OPENAI_*`
-setting is missing or Azure OpenAI still fails after the client's retries.
+setting is missing or Azure OpenAI still fails after the client's retries (a content-filter block is not a failure: see `refused`).
 
 ### Settings
 

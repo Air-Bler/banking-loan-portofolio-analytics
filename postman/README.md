@@ -8,7 +8,7 @@ and at least one field. Every response is also checked for an `X-Correlation-ID`
 | Platform | `/health`, `/ready`, `/ready` without a key or with a wrong key (401) | - |
 | Data | analytics (approval rate by branch, outstanding balance by year, DTI band share), metric catalogue, branch summary, exceptions, connected exposure | Databricks |
 | Errors | unknown metric, grouping on DTI band share, malformed branch code (422); unknown branch, application, route (404) | - |
-| Assistant | a KPI and a breakdown question that must be answered from Gold data (`status` answered, `evidence` not empty), an action request that must be refused, an empty question (422) | `AZURE_OPENAI_*` |
+| Assistant | a KPI and a breakdown question that must be answered from Gold data (`status` answered, `evidence` not empty), a connected-exposure question that must use the knowledge-graph tool, an action request that must be refused, a self-harm question that must get the help line (1018), an empty question (422) | `AZURE_OPENAI_*` |
 
 ## Variables
 
@@ -42,6 +42,6 @@ Prod takes an Entra ID bearer token instead of an API key, so this collection ta
 |---|---|---|---|---|
 | local, real Gold | Platform, Data, Errors | 17 | 52 | 0 |
 | dev | Platform, Data, Errors | 17 | 52 | 0 |
-| local, `FakeRepository` and the real Azure OpenAI model | Assistant | 4 | 12 | 0 |
+| local, `FakeRepository` and the real Azure OpenAI model | Assistant | 6 | 18 | 0 |
 
 On dev, the pipeline's `api-tests` job runs every folder after each deploy.
