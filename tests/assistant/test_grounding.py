@@ -191,7 +191,18 @@ def test_summary_formats_amounts_and_counts():
         "group_by": None, "filters": {"branch_code": "BR001"},
         "rows": [{"group": None, "value": 129992400.62}], "as_of_date": "2025-12-31", "source": "gold.kpi_portfolio_monthly"}}
     text = summarise([run])
-    assert "EUR 129,992,400.62" in text and "Filters: branch_code=BR001" in text and "Whole portfolio" in text
+    assert "EUR 129,992,400.62" in text and "Filters: branch_code=BR001" in text and "- branch BR001: EUR 129,992,400.62" in text
+    assert "Whole portfolio" not in text
+    assert ungrounded_numbers(text, "", [run]) == []
+
+
+def test_summary_says_whole_portfolio_when_only_dates_are_filtered():
+    run = {"tool": "get_portfolio_kpi", "arguments": {}, "result": {
+        "metric": {"label": "Applications", "unit": "count", "definition": "number of loan applications"},
+        "group_by": None, "filters": {"date_from": "2025-01-01", "date_to": "2025-12-31"},
+        "rows": [{"group": None, "value": 12000}], "as_of_date": "2025-12-31", "source": "gold.kpi_portfolio_monthly"}}
+    text = summarise([run])
+    assert "- Whole portfolio: 12,000" in text and "branch" not in text.lower().replace("branch_code", "")
     assert ungrounded_numbers(text, "", [run]) == []
 
 

@@ -161,7 +161,8 @@ def _kpi_lines(result: dict) -> list[str]:
     if result.get("filters"):
         lines.append("Filters: " + ", ".join(f"{k}={v}" for k, v in result["filters"].items()))
     for row in result.get("rows", []):
-        label = f"{result['group_by']} {row['group']}" if result.get("group_by") else "Whole portfolio"
+        branch = (result.get("filters") or {}).get("branch_code")
+        label = f"{result['group_by']} {row['group']}" if result.get("group_by") else f"branch {branch}" if branch else "Whole portfolio"
         if result.get("group_by") is None and row.get("group"):
             label = str(row["group"])  # dti_band_share rows carry their band as the group
         detail = ""
