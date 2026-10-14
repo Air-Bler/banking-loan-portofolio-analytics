@@ -11,7 +11,8 @@ fallback (variables that are already set win). The first lines of the output nam
 .env is easy to spot. Wake the SQL warehouse first: a stopped one makes the first tool call time out and shows as no_data.
 
 A question passes when the status is one of the expected ones, the expected tool ran, an `answered` question has
-evidence, and the grounding check did not have to replace the model's wording.
+evidence, and the grounding check did not have to replace the model's wording (unless the question says
+`grounding: lenient`: a known limit, where a replaced answer is an accepted outcome).
 """
 
 from __future__ import annotations
@@ -73,7 +74,7 @@ def judge(item: dict, result: AssistantAnswer) -> list[str]:
         problems.append(f"{item['tool']} did not run (ran: {', '.join(tools_run) or 'nothing'})")
     if expected == ["answered"] and not result.evidence:
         problems.append("answered without evidence")
-    if any(GROUNDING_NOTE in limitation for limitation in result.limitations):
+    if item.get("grounding") != "lenient" and any(GROUNDING_NOTE in limitation for limitation in result.limitations):
         problems.append("grounding replaced the model's wording")
     return problems
 

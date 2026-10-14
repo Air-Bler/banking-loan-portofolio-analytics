@@ -108,7 +108,7 @@ def build_tools(repo) -> list[BaseTool]:
         (DTI of 35% or more), dti_band_share (whole portfolio only), delinquency_rate_30, outstanding_balance (EUR),
         manual_review_rate. Rates are ratios between 0 and 1. Use for any question about a KPI.
         Only these metrics exist. If the user asks for another one (rejection rate, profit ...), do not compute it
-        yourself: say it is not available and give the closest listed metric instead.
+        yourself: say it is not available and name the closest listed metric; do not fetch it to derive the one asked for.
         Only four breakdowns exist: branch, product, month and year. If the user asks for another one (segment,
         risk band, channel, region ...), do not substitute a different breakdown: say it is not available."""
         filters = {
@@ -143,7 +143,8 @@ def build_tools(repo) -> list[BaseTool]:
     def get_connected_exposure(application_id: str) -> dict | None:
         """Find the borrowers in the same household as the applicant of one loan application, and their total
         outstanding exposure (knowledge graph; it holds household links only). Needs an application ID like LA000225.
-        Always call it when the user names an application ID, even one that looks unusual: an unknown ID comes
+        Always call it when the user names an application ID, even one that looks unusual or made up: only this tool
+        can tell whether the ID exists, so never answer about an ID without calling it first. An unknown ID comes
         back as "not found", and that is the answer to give."""
         return repo.connected_exposure(application_id)
 

@@ -220,7 +220,9 @@ def test_get_metadata_is_described_for_what_can_you_do_questions():
 def test_descriptions_tell_the_model_what_to_do_with_unknown_metrics_and_ids():
     by_name = {t.name: " ".join(t.description.split()) for t in build_tools(FakeRepository())}
     assert "do not compute it yourself" in by_name["get_portfolio_kpi"]
+    assert "do not fetch it to derive the one asked for" in by_name["get_portfolio_kpi"]  # same rule as the prompt (rule 7)
     assert "Always call it when the user names an application ID" in by_name["get_connected_exposure"]
+    assert "never answer about an ID without calling it first" in by_name["get_connected_exposure"]
 
 
 def test_descriptions_tell_the_model_that_only_four_breakdowns_exist():
