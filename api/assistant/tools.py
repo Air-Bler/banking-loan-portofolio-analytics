@@ -108,7 +108,7 @@ def build_tools(repo) -> list[BaseTool]:
         (DTI of 35% or more), dti_band_share (whole portfolio only), delinquency_rate_30, outstanding_balance (EUR),
         manual_review_rate. Rates are ratios between 0 and 1. Use for any question about a KPI.
         Only these metrics exist. If the user asks for another one (rejection rate, profit ...), do not compute it
-        yourself: say it is not available and give the closest listed metric instead.
+        yourself: say it is not available and name the closest listed metric; do not fetch it to derive the one asked for.
         Only four breakdowns exist: branch, product, month and year. If the user asks for another one (segment,
         risk band, channel, region ...), do not substitute a different breakdown: say it is not available."""
         filters = {
