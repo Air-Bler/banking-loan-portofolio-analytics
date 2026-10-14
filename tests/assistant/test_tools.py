@@ -221,3 +221,11 @@ def test_descriptions_tell_the_model_what_to_do_with_unknown_metrics_and_ids():
     by_name = {t.name: " ".join(t.description.split()) for t in build_tools(FakeRepository())}
     assert "do not compute it yourself" in by_name["get_portfolio_kpi"]
     assert "Always call it when the user names an application ID" in by_name["get_connected_exposure"]
+
+
+def test_descriptions_tell_the_model_that_only_four_breakdowns_exist():
+    tool = next(t for t in build_tools(FakeRepository()) if t.name == "get_portfolio_kpi")
+    text = " ".join(tool.description.split())
+    assert "Only four breakdowns exist: branch, product, month and year" in text
+    assert "do not substitute a different breakdown" in text
+    assert "No other breakdown exists" in KpiArgs.model_fields["group_by"].description

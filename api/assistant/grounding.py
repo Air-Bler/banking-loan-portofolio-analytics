@@ -2,6 +2,9 @@
 
 Pure code, no model. The answer may round a source value to its own decimals and may show a ratio as a percentage
 (0.5921 covers 0.5921, 0.59, 59.2%, 59,2% and 59 %); it may not invent, convert units (1.2m) or compute new figures.
+The one computation allowed is the difference of two values of the same KPI that the tools returned, and only when
+the answer also shows both values ("45.5% against 42.6%: 2.9 points higher"). Anything else (a ratio, 1 minus a rate,
+a difference of two different KPIs) is still an invented figure.
 Years, dates and identifiers (BR003, LA000225, APP-03) are not claims about the data and are skipped.
 """
 
@@ -120,6 +123,54 @@ def _grounded(readings: list[tuple[Decimal, int]], percent: bool, sources: set[D
     return False
 
 
+MAX_VALUES_PER_KPI = 60  # a result has at most 50 rows; this bounds the pairs that are tried
+
+
+def _kpi_values(runs: list[dict]) -> list[tuple[list[Decimal], bool]]:
+    """For each KPI of the runs: its returned values, and whether it is a ratio. Several runs of one KPI are merged."""
+    merged: dict[str, tuple[set[Decimal], bool]] = {}
+    for run in runs:
+        result = run.get("result") or {}
+        metric = result.get("metric") or {}
+        if not isinstance(result.get("rows"), list) or not metric.get("name"):
+            continue
+        values, _ = merged.setdefault(metric["name"], (set(), metric.get("unit") == "ratio"))
+        for row in result["rows"]:
+            value = row.get("value") if isinstance(row, dict) else None
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                values.add(Decimal(str(value)))
+    return [(sorted(values)[:MAX_VALUES_PER_KPI], ratio) for values, ratio in merged.values()]
+
+
+def _is_shown(source: Decimal, ratio: bool, shown: list[tuple[list[tuple[Decimal, int]], bool]]) -> bool:
+    """Does the answer write this source value somewhere (a ratio may be written as a percentage)?"""
+    return any(_grounded(readings, percent or ratio, {source}) for readings, percent in shown)
+
+
+def _shown_pairs(kpis: list[tuple[list[Decimal], bool]], shown: list[tuple[list[tuple[Decimal, int]], bool]]) -> list[tuple[Decimal, Decimal]]:
+    """Every (low, high) pair of values of one KPI that the answer shows both of, in points for a ratio and as a fraction."""
+    pairs = []
+    for values, ratio in kpis:
+        written = [value for value in values if _is_shown(value, ratio, shown)]
+        for position, first in enumerate(written):
+            for second in written[position + 1 :]:
+                for scale in (100, 1) if ratio else (1,):
+                    pairs.append((first * scale, second * scale))
+    return pairs
+
+
+def _is_difference(readings: list[tuple[Decimal, int]], pairs: list[tuple[Decimal, Decimal]]) -> bool:
+    """Is the number the difference of one of these pairs, exact or computed from the values as the answer rounds them?"""
+    for value, decimals in readings:
+        quantum = Decimal(1).scaleb(-decimals)
+        for low, high in pairs:
+            if _rounds_to(high - low, value, decimals):
+                return True
+            if high.quantize(quantum, rounding=ROUND_HALF_UP) - low.quantize(quantum, rounding=ROUND_HALF_UP) == value:
+                return True
+    return False
+
+
 def ungrounded_numbers(text: str, question: str, runs: list[dict]) -> list[str]:
     """The numbers of text that appear neither in the tool runs nor in the question (as written, e.g. '71%')."""
     sources: set[Decimal] = set()
@@ -131,11 +182,18 @@ def ungrounded_numbers(text: str, question: str, runs: list[dict]) -> list[str]:
         if percent:  # "a target of 70%" may come back as 0.7
             sources.update(value / 100 for value, _ in readings)
 
+    found = _numbers(text)
+    shown = [(readings, percent) for _, readings, percent in found if readings]
+    pairs: list[tuple[Decimal, Decimal]] | None = None  # worked out once, and only if a number needs it
     bad = []
-    for token, readings, percent in _numbers(text):
+    for token, readings, percent in found:
         if not readings or _is_year(token, readings, percent):
             continue
-        if not _grounded(readings, percent, sources) and token not in bad:
+        if _grounded(readings, percent, sources) or token in bad:
+            continue
+        if pairs is None:
+            pairs = _shown_pairs(_kpi_values(runs), shown)
+        if not _is_difference(readings, pairs):
             bad.append(token)
     return bad
 
@@ -161,7 +219,8 @@ def _kpi_lines(result: dict) -> list[str]:
     if result.get("filters"):
         lines.append("Filters: " + ", ".join(f"{k}={v}" for k, v in result["filters"].items()))
     for row in result.get("rows", []):
-        label = f"{result['group_by']} {row['group']}" if result.get("group_by") else "Whole portfolio"
+        branch = (result.get("filters") or {}).get("branch_code")
+        label = f"{result['group_by']} {row['group']}" if result.get("group_by") else f"branch {branch}" if branch else "Whole portfolio"
         if result.get("group_by") is None and row.get("group"):
             label = str(row["group"])  # dti_band_share rows carry their band as the group
         detail = ""

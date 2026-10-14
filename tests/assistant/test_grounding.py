@@ -191,7 +191,18 @@ def test_summary_formats_amounts_and_counts():
         "group_by": None, "filters": {"branch_code": "BR001"},
         "rows": [{"group": None, "value": 129992400.62}], "as_of_date": "2025-12-31", "source": "gold.kpi_portfolio_monthly"}}
     text = summarise([run])
-    assert "EUR 129,992,400.62" in text and "Filters: branch_code=BR001" in text and "Whole portfolio" in text
+    assert "EUR 129,992,400.62" in text and "Filters: branch_code=BR001" in text and "- branch BR001: EUR 129,992,400.62" in text
+    assert "Whole portfolio" not in text
+    assert ungrounded_numbers(text, "", [run]) == []
+
+
+def test_summary_says_whole_portfolio_when_only_dates_are_filtered():
+    run = {"tool": "get_portfolio_kpi", "arguments": {}, "result": {
+        "metric": {"label": "Applications", "unit": "count", "definition": "number of loan applications"},
+        "group_by": None, "filters": {"date_from": "2025-01-01", "date_to": "2025-12-31"},
+        "rows": [{"group": None, "value": 12000}], "as_of_date": "2025-12-31", "source": "gold.kpi_portfolio_monthly"}}
+    text = summarise([run])
+    assert "- Whole portfolio: 12,000" in text and "branch" not in text.lower().replace("branch_code", "")
     assert ungrounded_numbers(text, "", [run]) == []
 
 
@@ -226,3 +237,75 @@ def test_a_percentage_in_the_question_may_come_back_as_a_fraction():
     assert ungrounded_numbers("The rate of 0.5921 is below your target of 0.7.", question, [kpi_run()]) == []
     assert ungrounded_numbers("The rate of 0.5921 is below your target of 70%.", question, [kpi_run()]) == []
     assert ungrounded_numbers("The rate is below your target of 0.8.", question, [kpi_run()]) == ["0.8"]
+
+
+# ---- the difference of two values of one KPI ------------------------------------------------------------------------------------
+def kpi_rows(metric, unit, rows, group_by="branch", filters=None):
+    """A KPI run with several rows: rows is [(group, value), ...]."""
+    return {
+        "tool": "get_portfolio_kpi",
+        "arguments": {"metric": metric, "group_by": group_by},
+        "result": {
+            "metric": {"name": metric, "label": metric, "unit": unit, "definition": "d"},
+            "group_by": group_by,
+            "filters": filters or {},
+            "rows": [{"group": group, "value": value} for group, value in rows],
+            "as_of_date": "2025-12-31",
+            "source": "gold.kpi_portfolio_monthly",
+        },
+    }
+
+
+DELINQUENCY = kpi_rows("delinquency_rate_30", "ratio", [("BR001", 0.1183), ("BR002", 0.1277), ("BR003", 0.1229)])
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "BR001 is at 11.8% and BR002 at 12.8%, a difference of 1.0 percentage points.",  # from the rounded figures
+        "BR001 is at 11.83% and BR002 at 12.77%: 0.94 points apart.",  # from the exact ones
+        "BR001 has 11.8% and BR002 has 12.8%, so BR002 is 0.9 points higher.",  # exact 0.94 rounded
+    ],
+)
+def test_a_difference_of_two_shown_values_of_one_kpi_is_allowed(text):
+    assert ungrounded_numbers(text, "", [DELINQUENCY]) == []
+
+
+def test_the_two_values_may_come_from_two_runs():
+    runs = [
+        kpi_rows("approval_rate", "ratio", [("BR003", 0.4549)], group_by=None, filters={"branch_code": "BR003"}),
+        kpi_rows("approval_rate", "ratio", [("BR012", 0.426)], group_by=None, filters={"branch_code": "BR012"}),
+    ]
+    assert ungrounded_numbers("BR003 approved 45.5% and BR012 42.6%: 2.9 points more.", "", runs) == []
+
+
+def test_an_amount_difference_of_one_kpi_is_allowed():
+    run = kpi_rows("outstanding_balance", "EUR", [("BR001", 1000000.5), ("BR002", 800000.5)])
+    assert ungrounded_numbers("BR001 has 1,000,000.5 and BR002 800,000.5: 200,000 apart.", "", [run]) == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "BR003 is 2.9 points above BR012.",  # the two values are not shown, so the figure cannot be checked
+        "BR001 is at 11.8% and BR002 at 12.8%, a difference of 4.0 points.",  # not their difference
+        "BR002 is 1.1 times BR001: 12.8% against 11.8%.",  # a ratio is not a difference
+        "BR001 is at 11.8%, so 88.2% of the loans are not delinquent.",  # 1 minus a rate
+    ],
+)
+def test_anything_else_is_still_an_invented_figure(text):
+    assert ungrounded_numbers(text, "", [DELINQUENCY]) != []
+
+
+def test_a_difference_of_two_different_kpis_is_not_allowed():
+    runs = [
+        kpi_rows("delinquency_rate_30", "ratio", [("BR001", 0.1183)]),
+        kpi_rows("approval_rate", "ratio", [("BR001", 0.4489)]),
+    ]
+    text = "Delinquency is 11.8% and approval 44.9%: 33.1 points apart."
+    assert ungrounded_numbers(text, "", runs) == ["33.1"]
+
+
+def test_a_difference_of_a_value_and_a_constant_is_not_allowed():
+    run = kpi_rows("approval_rate", "ratio", [("BR001", 0.4489)])
+    assert ungrounded_numbers("BR001 approves 44.9%, which is 5.1 points under 50%.", "", [run]) != []

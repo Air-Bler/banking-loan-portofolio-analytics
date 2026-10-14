@@ -3,6 +3,8 @@
     uv run python -m eval.run_eval              # all questions
     uv run python -m eval.run_eval --demo       # only the questions marked demo: true
     uv run python -m eval.run_eval --markdown   # also print the table as markdown (for docs/07_langchain.md)
+    uv run python -m eval.run_eval --repeat 5   # ask every question 5 times: shows which answers are not stable
+    uv run python -m eval.run_eval --only rejection --only segment   # only the questions that contain one of these words
 
 It needs the real Gold repository and Azure OpenAI. Settings come from the environment; the repo-root .env is only a
 fallback (variables that are already set win). The first lines of the output name the model and endpoint so a wrong
@@ -17,6 +19,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
@@ -44,6 +47,14 @@ class Row:
 def load_questions(path: Path = QUESTIONS, demo_only: bool = False) -> list[dict]:
     items = yaml.safe_load(path.read_text(encoding="utf-8"))
     return [item for item in items if item.get("demo")] if demo_only else items
+
+
+def select_questions(items: list[dict], words: list[str]) -> list[dict]:
+    """The questions whose text contains any of the words (case does not matter). No words: all of them."""
+    if not words:
+        return items
+    wanted = [word.casefold() for word in words]
+    return [item for item in items if any(word in item["question"].casefold() for word in wanted)]
 
 
 def expected_statuses(item: dict) -> list[str]:
@@ -82,6 +93,23 @@ def run_question(item: dict, repo, llm) -> Row:
     return row
 
 
+def run_repeated(item: dict, repo, llm, times: int) -> list[Row]:
+    """Ask the same question several times: the model does not always answer the same way."""
+    return [run_question(item, repo, llm) for _ in range(times)]
+
+
+def format_repeat_table(groups: list[list[Row]]) -> str:
+    """One line per question: how many runs passed and which statuses came back."""
+    lines = []
+    for number, rows in enumerate(groups, 1):
+        passed = sum(row.passed for row in rows)
+        statuses = Counter(row.result.status if row.result else "error" for row in rows)
+        mix = ", ".join(f"{status} x{count}" for status, count in statuses.most_common())
+        lines.append(f"{'PASS' if passed == len(rows) else 'FAIL'}  {number:>2}  {passed}/{len(rows)}  {mix:<30} "
+                     f"{rows[0].item['question'][:58]}")
+    return "\n".join(lines)
+
+
 def _tools(row: Row) -> str:
     return ", ".join(dict.fromkeys(step["tool"] for step in row.result.trace)) if row.result else ""
 
@@ -105,11 +133,30 @@ def format_markdown(rows: list[Row]) -> str:
     return "\n".join(lines)
 
 
+def _main_repeated(items: list[dict], repo, llm, times: int) -> int:
+    groups = [run_repeated(item, repo, llm, times) for item in items]
+    print(format_repeat_table(groups))
+    unstable = [rows for rows in groups if not all(row.passed for row in rows)]
+    for rows in unstable:
+        print(f"\nFAIL {sum(row.passed for row in rows)}/{times}: {rows[0].item['question']}")
+        for problem, count in Counter(p for row in rows for p in row.problems).most_common():
+            print(f"  {count}x {problem}")
+    print(f"\n{len(groups) - len(unstable)}/{len(groups)} questions passed every run ({times} runs each)")
+    return 1 if unstable else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--demo", action="store_true", help="only the questions marked demo: true")
     parser.add_argument("--markdown", action="store_true", help="also print the results as a markdown table")
+    parser.add_argument("--only", action="append", default=[], metavar="WORD",
+                        help="only the questions that contain WORD (case-insensitive); repeat it to allow several words")
+    parser.add_argument("--repeat", type=int, default=1, metavar="N", help="ask every question N times (default 1)")
     args = parser.parse_args(argv)
+    if args.repeat < 1:
+        parser.error("--repeat must be at least 1")
+    if args.repeat > 1 and args.markdown:
+        parser.error("--markdown works with a single run: do not combine it with --repeat")
 
     from dotenv import load_dotenv
 
@@ -138,7 +185,12 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     print(f"Data as of {info['as_of_date']}\n")
 
-    items = load_questions(demo_only=args.demo)
+    items = select_questions(load_questions(demo_only=args.demo), args.only)
+    if not items:
+        print(f"No question matches: {', '.join(args.only)}", file=sys.stderr)
+        return 2
+    if args.repeat > 1:
+        return _main_repeated(items, repo, llm, args.repeat)
     rows = [run_question(item, repo, llm) for item in items]
     print(format_table(rows))
     failed = [row for row in rows if not row.passed]
