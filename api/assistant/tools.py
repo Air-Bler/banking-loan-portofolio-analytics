@@ -51,7 +51,7 @@ class _Strict(BaseModel):
 
 class KpiArgs(_Strict):
     metric: Metric = Field(description="The KPI to read. dti_band_share only works for the whole portfolio.")
-    group_by: GroupBy | None = Field(default=None, description="Break the KPI down by branch, product, month or year.")
+    group_by: GroupBy | None = Field(default=None, description="Break the KPI down by branch, product, month or year. No other breakdown exists.")
     date_from: str | None = Field(default=None, pattern=ISO_DATE, description="First day, YYYY-MM-DD (data is monthly).")
     date_to: str | None = Field(default=None, pattern=ISO_DATE, description="Last day, YYYY-MM-DD (data is monthly).")
     branch_code: str | None = Field(default=None, pattern=BRANCH, description="Only this branch, e.g. BR003.")
@@ -108,7 +108,9 @@ def build_tools(repo) -> list[BaseTool]:
         (DTI of 35% or more), dti_band_share (whole portfolio only), delinquency_rate_30, outstanding_balance (EUR),
         manual_review_rate. Rates are ratios between 0 and 1. Use for any question about a KPI.
         Only these metrics exist. If the user asks for another one (rejection rate, profit ...), do not compute it
-        yourself: say it is not available and give the closest listed metric instead."""
+        yourself: say it is not available and give the closest listed metric instead.
+        Only four breakdowns exist: branch, product, month and year. If the user asks for another one (segment,
+        risk band, channel, region ...), do not substitute a different breakdown: say it is not available."""
         filters = {
             key: value
             for key, value in {"date_from": date_from, "date_to": date_to, "branch_code": branch_code}.items()
