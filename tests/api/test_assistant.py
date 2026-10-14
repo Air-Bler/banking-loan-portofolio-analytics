@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from api.assistant.llm import get_llm
 from api.main import app
 from api.settings import Settings, get_settings
-from tests.assistant.scripted_llm import ScriptedLLM, call, final
+from tests.assistant.scripted_llm import ScriptedLLM, call, content_filter, final
 
 URL = "/assistant/query"
 QUESTION = {"question": "What is the approval rate by branch?"}
@@ -74,6 +74,14 @@ def test_model_outage_is_503(client):
         "code": "assistant_unavailable", "message": "The assistant is unavailable, try again later",
         "correlation_id": response.headers["X-Correlation-ID"], "details": [],
     }
+
+
+def test_content_filter_is_200_refused_not_503(client):
+    use_llm([content_filter()])  # Azure blocks the prompt with a 400 content_filter
+    response = client.post(URL, json={"question": "Describe a violent robbery at a branch"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "refused" and body["evidence"] == []
 
 
 def test_databricks_down_is_503_data_unavailable(broken_client):

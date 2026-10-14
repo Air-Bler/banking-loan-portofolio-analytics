@@ -6,6 +6,8 @@ raised instead of returned (to simulate an Azure outage), and running out of rep
 
 from typing import Any
 
+import httpx
+import openai
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
@@ -43,3 +45,12 @@ def draft(status: str, answer: str, limitations=()) -> AIMessage:
 def final(status: str, answer: str, limitations=()) -> list[AIMessage]:
     """The model's last text reply (no tool calls), then its structured answer."""
     return [AIMessage(content=answer), draft(status, answer, limitations)]
+
+
+def content_filter(category: str = "violence") -> openai.BadRequestError:
+    """The 400 Azure OpenAI returns when its content filter blocks a prompt, as the openai client raises it."""
+    body = {"code": "content_filter", "message": "The prompt was filtered.",
+            "innererror": {"code": "ResponsibleAIPolicyViolation",
+                           "content_filter_result": {category: {"filtered": True, "severity": "medium"}}}}
+    response = httpx.Response(400, request=httpx.Request("POST", "https://oai-test.openai.azure.com/"))
+    return openai.BadRequestError("The prompt was filtered.", response=response, body=body)

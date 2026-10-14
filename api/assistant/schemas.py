@@ -20,7 +20,7 @@ class AnswerDraft(BaseModel):
         description="answered: the tools returned data and the answer uses it; refused: out of scope, an action "
         "or personal data; no_data: the tools returned nothing usable; incomplete: the answer is partial."
     )
-    answer: str = Field(description="2-4 sentences in the language of the question. Every number comes from a tool result.")
+    answer: str = Field(description="Two to four sentences in the language of the question. Every number comes from a tool result.")
     limitations: list[str] = Field(
         default_factory=list, description="What the answer does not cover: date range, missing data, failed tools."
     )

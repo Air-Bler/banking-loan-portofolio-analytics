@@ -463,7 +463,8 @@ function renderTurn(turn) {
   const asOf = r.evidence[0]?.as_of_date;
   const status = {
     answered: ["answered", t("Answered"), [secs, calls, asOf ? t("data as of {date}", { date: fmtDate(asOf) }) : null].filter(Boolean).join(" · ")],
-    refused: ["refused", t("Refused"), t("Outside what the assistant can do")],
+    // a supportive self-harm answer has no limitation: no "outside what the assistant can do" under it
+    refused: ["refused", t("Refused"), r.limitations.length ? t("Outside what the assistant can do") : ""],
     no_data: ["nodata", t("No data"), secs],
     incomplete: ["incomplete", t("Incomplete"), t("{secs} · stopped before a full answer", { secs })],
   }[r.status] || ["nodata", t("No data"), secs];

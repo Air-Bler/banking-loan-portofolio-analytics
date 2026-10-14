@@ -26,7 +26,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 
 from api.assistant.grounding import summarise, ungrounded_numbers
-from api.assistant.guard import check_question
+from api.assistant.guard import SELF_HARM, check_question, support_message
 from api.assistant.prompts import FINAL, PROMPT
 from api.assistant.schemas import AnswerDraft, AssistantAnswer
 from api.assistant.tools import build_tools, run_tool
@@ -75,6 +75,8 @@ def build_graph(repo, llm):
     def guard(state: AssistantState) -> dict:
         """Refuse actions, SQL, personal data and prompt injection before the model sees the question."""
         reason = check_question(state["question"])
+        if reason == SELF_HARM:  # a supportive answer with help lines, not a note about the refusal
+            return {"status": "refused", "answer": support_message(state["question"])}
         if reason:
             return {"status": "refused", "answer": REFUSAL,
                     "limitations": [f"Refused before any data was read ({reason})."]}
