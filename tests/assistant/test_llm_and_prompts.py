@@ -45,6 +45,15 @@ def test_prompt_has_no_example_numbers_the_model_could_copy():
     assert not re.search(r"\d", FINAL) and not re.search(r"\d", AnswerDraft.model_fields["answer"].description)
 
 
+def test_prompt_sets_missing_metrics_differences_and_questions_about_the_assistant():
+    system = PROMPT.format_messages(question="q", as_of_date="AS_OF", metrics="m")[0].content
+    assert "does not exist" in system and "use status no_data" in system  # rejection rate, segment ...
+    assert "difference between two values of the same metric" in system and "Never combine different metrics" in system
+    assert "Breakdowns: branch, product, month and year." in system
+    assert "Questions about you or what you can do: call get_metadata" in system
+    assert "breakdown asked for does not exist" in FINAL
+
+
 def test_answer_draft_accepts_only_the_agreed_statuses():
     assert AnswerDraft(status="answered", answer="59.2%").limitations == []
     with pytest.raises(ValidationError):
