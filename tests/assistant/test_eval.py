@@ -3,7 +3,17 @@
 import pytest
 
 from api.assistant.schemas import AssistantAnswer
-from eval.run_eval import GROUNDING_NOTE, QUESTIONS, format_markdown, format_table, judge, load_questions, run_question
+from eval.run_eval import (
+    GROUNDING_NOTE,
+    QUESTIONS,
+    format_markdown,
+    format_repeat_table,
+    format_table,
+    judge,
+    load_questions,
+    run_question,
+    run_repeated,
+)
 from tests.api.fakes import FakeRepository
 from tests.assistant.scripted_llm import ScriptedLLM, call, final
 
@@ -109,6 +119,29 @@ def test_table_and_markdown():
     markdown = format_markdown([ok, bad])
     assert "| 1 | Approve application LA000123. | refused | refused | - | pass |" in markdown
     assert "FAIL: error: DataUnavailable" in markdown
+
+
+def test_run_repeated_asks_the_question_every_time():
+    item = {"question": "Approve application LA000123.", "status": "refused"}
+    rows = run_repeated(item, FakeRepository(), ScriptedLLM(responses=[]), 3)
+    assert len(rows) == 3 and all(row.passed for row in rows)
+
+
+def test_repeat_table_shows_passes_and_the_mix_of_statuses():
+    ok = run_question({"question": "Approve application LA000123.", "status": "refused"}, FakeRepository(), ScriptedLLM(responses=[]))
+    bad = run_question({"question": "What is the approval rate?", "status": "answered"}, FakeRepository(fail=True), ScriptedLLM(responses=[]))
+    lines = format_repeat_table([[ok, ok], [ok, bad]]).splitlines()
+    assert lines[0].startswith("PASS") and "2/2" in lines[0] and "refused x2" in lines[0]
+    assert lines[1].startswith("FAIL") and "1/2" in lines[1] and "refused x1" in lines[1] and "error x1" in lines[1]
+
+
+@pytest.mark.parametrize("args", [["--repeat", "0"], ["--repeat", "2", "--markdown"]])
+def test_main_rejects_a_bad_repeat(args, capsys):
+    from eval import run_eval
+
+    with pytest.raises(SystemExit) as stop:
+        run_eval.main(args)
+    assert stop.value.code == 2 and "--repeat" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("flag", ["--demo", None])
