@@ -143,7 +143,8 @@ def build_tools(repo) -> list[BaseTool]:
     def get_connected_exposure(application_id: str) -> dict | None:
         """Find the borrowers in the same household as the applicant of one loan application, and their total
         outstanding exposure (knowledge graph; it holds household links only). Needs an application ID like LA000225.
-        Always call it when the user names an application ID, even one that looks unusual: an unknown ID comes
+        Always call it when the user names an application ID, even one that looks unusual or made up: only this tool
+        can tell whether the ID exists, so never answer about an ID without calling it first. An unknown ID comes
         back as "not found", and that is the answer to give."""
         return repo.connected_exposure(application_id)
 
