@@ -41,6 +41,7 @@ _SELF_HARM = _rx(
     r"\b(?:suicid\w*|self[- ]?harm\w*|self[- ]?injur\w*|kill(?:ing)? my ?self|end(?:ing)? my (?:own )?life|take my (?:own )?life|"
     r"hurt(?:ing)? my ?self|cut(?:ting)? my ?self|(?:want|wanna|going) to die|wish i (?:was|were) dead|better off dead|"
     r"(?:do not|dont|don't|no longer) want to (?:live|be alive)|no reason to live|end it all)\b"
+    r"|\b(?:thelo na (?:pethano|skotoso)|skotoso ton eafto mou|thelo na teliosw?\b|aftoktonia\w*)\b"
     r"|\b(?:αυτοκτον\w*|αυτοτραυματ\w*|θελω να πεθανω|θελω να (?:με )?σκοτωσω|να σκοτωσω τον εαυτο μου|"
     r"να τελειωσω (?:τη ζωη μου|με ολα)|δεν θελω να ζω|δεν αξιζει να ζω|να κανω κακο στον εαυτο μου)\b"
 )
@@ -64,10 +65,13 @@ def support_message(question: str) -> str:
 _INJECTION = _rx(
     r"\b(?:ignore|disregard|forget|bypass)\b.{0,40}\b(?:instructions?|prompts?|guidelines?|restrictions?|safeguards?|rules)\b"
     r"|\b(?:αγνοησ\w*|ξεχασ\w*|παρακαμψ\w*)\b.{0,40}\b(?:οδηγι\w*|κανον\w*|εντολ\w*|περιορισμ\w*)"
-    r"|\b(?:system|developer|hidden|initial) (?:prompts?|instructions?|messages?)\b|\bprompt (?:injection|leak)\b"
+    r"|\b(?:system|developer|hidden|initial)[ -](?:prompts?|instructions?|messages?)\b|\bprompt (?:injection|leak)\b"
     r"|\brepeat\b.{0,30}\b(?:text|words|message|everything) above\b"
     r"|\b(?:reveal|show|print|repeat|display)\b.{0,20}\b(?:your|the) (?:instructions|prompt|rules)\b"
     r"|\b(?:εμφανισε|δειξε|αποκαλυψε)\b.{0,20}\b(?:οδηγιεσ|prompt|κανονεσ)\b"
+    r"|\bignorier\w*\b.{0,40}\b(?:anweisung\w*|regeln|instruktion\w*|vorgaben)\b"  # German
+    r"|\bagnoise\w*\b.{0,40}\b(?:odigies|kanones|entoles)\b"  # Greek written in Latin letters
+    r"|\byou are dan\b|\bdo anything now\b|\bpretend (?:that )?i(?: am|'m)\b"
     r"|\byou are now\b|\bact as (?:if|an? |the )|\bpretend (?:to be|you)|\bjailbreak\b|\bdeveloper mode\b|\bdan mode\b"
     r"|\bεισαι τωρα\b|\bfrom now on\b.{0,30}\byou\b"
     r"|<\s*/?\s*(?:system|assistant|user)\s*>|\[\s*(?:system|inst)\s*\]|^\s*(?:system|assistant)\s*:"
@@ -96,8 +100,12 @@ _VERBS = (
     r"reset|submit|disable|enable|execute|erase|wipe|purge|revoke|suspend|reopen|"
     r"ενεκριν\w*|εγκριν\w*|απορριψ\w*|διεγραψ\w*|διαγραψ\w*|σβησ\w*|αλλαξ\w*|τροποποι\w*|ακυρω\w*|αυξησ\w*|μειωσ\w*|"
     r"μπλοκαρ\w*|παγωσ\w*|ενημερωσ\w*|δημιουργησ\w*|προσθεσ\w*|μεταφερ\w*|στειλ\w*|αναστειλ\w*|ανακαλεσ\w*|"
-    r"εξοφλησ\w*|χορηγησ\w*"
+    r"εξοφλησ\w*|χορηγησ\w*|"
+    # German and Greek written in Latin letters (accents and umlauts are already gone: lösche -> losche)
+    r"genehmig\w*|losch\w*|storniere\w*|andere(?= (?:den|die|das|dem)\b)"
 )
+# Greek written in Latin letters: "to" is the article there ("allaxe to epitokio"), so the English preposition rule must not apply
+_LATIN_GREEK_VERBS = r"egkrin\w*|aporripse\w*|diagrapse\w*|svise\w*|allaxe\w*|tropopoihse\w*|akyrose\w*|enimerose\w*"
 _POLITE = (
     r"please|pls|kindly|can you|could you|would you|will you|i want you to|i need you to|i would like you to|go ahead and|"
     r"hey|hi|hello|ok|okay|assistant|just|now|then|and|also|"
@@ -106,10 +114,12 @@ _POLITE = (
 # "close to 50%", "lower than 10%", "set of branches": a verb followed by a preposition is not an order
 _PREPOSITION = r"(?:to|in|of|on|at|by|from|over|about|between|than)"
 _ACTION = _rx(rf"^[^a-zα-ω0-9]*(?:(?:{_POLITE})[ ,]+){{0,3}}(?P<verb>{_VERBS})\b(?!\s+{_PREPOSITION}\b)(?P<rest>.*)$")
+_ACTION_LATIN_GREEK = _rx(rf"^[^a-zα-ω0-9]*(?:(?:{_POLITE})[ ,]+){{0,3}}(?P<verb>{_LATIN_GREEK_VERBS})\b(?P<rest>.*)$")
 _OBJECT = _rx(
     r"\b(?:application|applicant|customer|client|loan|account|interest|rate|limit|record|row|table|data|decision|credit|"
     r"mortgage|installment|repayment|branch|product|exception|balance|exposure|status|batch|rule)\w*"
     r"|\b(?:la\d+|cu\d+|c\d{4,})\b"
+    r"|\b(?:antrag\w*|kunde\w*|zinssatz\w*|darlehen\w*|kredit\w*|konto\w*|filiale\w*|aitis\w*|pelat\w*|epitok\w*|proion\w*|katastim\w*)"
     r"|\b(?:αιτησ\w*|πελατ\w*|δανει\w*|λογαριασμ\w*|επιτοκ\w*|ορι\w*|εγγραφ\w*|πινακ\w*|δεδομεν\w*|αποφασ\w*|πιστ\w*|"
     r"δοσ\w*|καταστημ\w*|προιον\w*|υπολοιπ\w*|εξαιρεσ\w*|ενυποθηκ\w*|οφειλ\w*)"
 )
@@ -118,9 +128,12 @@ _STATUS_CHANGE = _rx(
     r"\b(?:mark|make)\b.{0,40}\b(?:la\d{6}|applications?|loans?)\b.{0,30}"
     r"\b(?:approved|rejected|declined|paid|closed|cancelled|canceled|delinquent|active)\b"
 )
+# "...and then approve LA000123": the verb is not at the start of its sentence
+_VERB_ON_ID = _rx(rf"\b(?:{_VERBS})\b\s+(?:the |this |that )?(?:loan |application |antrag )?la\d{{6}}\b")
 # a noun that only looks like a verb at the start: "change in approval rate", "αύξηση του ποσοστού"
 _ANALYTICAL_LEAD = _rx(
     r"^(?:changes?|increase|decrease|updates?)\s+(?:in|of|over|on|about)\b"
+    r"|^approve rates?\b"  # a misspelling of "approval rate", not an order
     r"|^(?:αλλαγ\w*|αυξηση|μειωση|μεταβολ\w*|διαφορ\w*|ενημερωση)\b"
 )
 
@@ -130,6 +143,7 @@ _PII_STRONG = _rx(
     r"\b(?:phone|telephone|mobile)\s+numbers?\b|\bmobile phone\b|\bcontact (?:details|info|information)\b|\biban\b"
     r"|\btax (?:id|number)\b|\bvat (?:id|number)\b|\bpassport\b|\bssn\b|\bsocial security\b|\bid card\b|\bidentity card\b"
     r"|\bdate of birth\b|\bbirth ?date\b|\bbirthday\b|\bhome address\b|\brecord[_ ]payload\b|\braw payload\b"
+    r"|\btelefon\w*|\bhandynummer\w*|\bgeburtsdatum\b|\bsteuernummer\b|\btilefon\w*|\bkinito\b"
     r"|\bτηλεφων\w*|\bκινητο\b|\bαφμ\b|\bαμκα\b|\bταυτοτητα\b|\bδιαβατηριο\b|\bημερομηνια γεννησ\w*|\bδιευθυνση κατοικιασ\b"
 )
 # weak terms need a person as the subject ("email of the customer", "ονόματα πελατών")
@@ -146,8 +160,11 @@ _AGGREGATE_LEAD = _rx(
 
 
 def _is_action(sentence: str) -> bool:
-    match = _ACTION.match(sentence)
-    return bool(match and not _ANALYTICAL_LEAD.match(sentence) and _OBJECT.search(match.group("rest")))
+    for pattern in (_ACTION, _ACTION_LATIN_GREEK):
+        match = pattern.match(sentence)
+        if match and not _ANALYTICAL_LEAD.match(sentence) and _OBJECT.search(match.group("rest")):
+            return True
+    return False
 
 
 def check_question(question: str) -> str | None:
@@ -167,7 +184,7 @@ def check_question(question: str) -> str | None:
         return "raw SQL request"
     if _SECRETS.search(text):
         return "credentials request"
-    if _STATUS_CHANGE.search(text) or any(_is_action(s.strip()) for s in re.split(r"[.!?;\n]+", text) if s.strip()):
+    if _STATUS_CHANGE.search(text) or _VERB_ON_ID.search(text) or any(_is_action(s.strip()) for s in re.split(r"[.!?;\n]+", text) if s.strip()):
         return "action request"
     if _PII_STRONG.search(text) or _WHO_IS.search(text):
         return "personal data"
