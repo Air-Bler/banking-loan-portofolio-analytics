@@ -1,9 +1,11 @@
+import re
+
 import pytest
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import ValidationError
 
 from api.assistant.llm import MAX_RETRIES, TIMEOUT_SECONDS, get_llm
-from api.assistant.prompts import PROMPT
+from api.assistant.prompts import FINAL, PROMPT
 from api.assistant.schemas import AnswerDraft, AssistantAnswer
 from api.errors import AssistantUnavailable
 from api.settings import Settings
@@ -33,6 +35,14 @@ def test_system_prompt_sets_the_number_format_and_the_unknown_group():
     system = PROMPT.format_messages(question="q", as_of_date="2025-12-31", metrics="m")[0].content
     assert "percentages with one decimal" in system  # not 0.3841886269070735 in the answer
     assert "UNKNOWN" in system and "Leave it out of rankings" in system
+
+
+def test_prompt_has_no_example_numbers_the_model_could_copy():
+    # A number in the prompt (e.g. "0.3842 -> 38.4%") ends up in answers and fails the number check.
+    system = PROMPT.format_messages(question="q", as_of_date="AS_OF", metrics="m")[0].content
+    system = re.sub(r"^\d+\. ", "", system, flags=re.MULTILINE)  # the rule numbers 1. to 6.
+    assert set(re.findall(r"\d+(?:[.,]\d+)*", system)) <= {"2016"}  # a year: the check skips years
+    assert not re.search(r"\d", FINAL) and not re.search(r"\d", AnswerDraft.model_fields["answer"].description)
 
 
 def test_answer_draft_accepts_only_the_agreed_statuses():
