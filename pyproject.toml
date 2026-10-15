@@ -1,7 +1,7 @@
 [project]
 name = "loan-analytics"
 version = "0.1.0"
-description = "Add your description here"
+description = "Team 2 banking loan portfolio analytics: Databricks Gold layer, FastAPI service and LangGraph assistant"
 readme = "README.md"
 authors = [
     { name = "GeorgeKorlos", email = "korlosgeorge@gmail.com" }
