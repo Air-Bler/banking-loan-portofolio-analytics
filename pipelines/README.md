@@ -10,7 +10,7 @@ Databricks reads every `.sql` file in the three folders and works out the order 
 ```
 pipelines/
 ├── bronze/   P1   one streaming table per source file (7)
-├── silver/   P1   standardisation, newest version wins, 36 quality rules, quarantine
+├── silver/   P1   standardisation, newest version wins, 37 quality rules, quarantine
 └── gold/     P2a  6 dimensions, 2 facts, macro table, exceptions, reconciliation, KPIs, graph (bonus)
 ```
 
@@ -32,14 +32,14 @@ The local test cannot run the parts that only exist in Databricks: `read_files`,
 
 ## Set it up in Databricks
 
-1. **Upload the data.** In Catalog, open the volume `data2026acc123456.crm.crmfolder` and create a folder `loans`. Upload the four folders from `data/landing/` into it, keeping their names: `/Volumes/data2026acc123456/crm/crmfolder/loans/batch_001/customers.csv`, and so on.
+1. **Upload the data.** In Catalog, open the volume `data2026acc123456.team2.raw_data` and create a folder `loans`. Upload the four folders from `data/landing/` into it, keeping their names: `/Volumes/data2026acc123456/team2/raw_data/loans/batch_001/customers.csv`, and so on.
    - Or by script: `pip install databricks-sdk`, `databricks auth login --host <workspace-url>`, then `python scripts/upload_data.py --landing data/landing`. Add `--start --wait` to run the pipeline after the upload, or `--each-batch` for the incremental demo (upload a batch, run, wait, next batch). Files already uploaded are skipped.
    - Do **not** upload `data/generated_metadata/`. It is for checking only; the data guide says the manifest must not be ingested.
    - If your catalog, schema or volume differ, change the path in the 7 files in `bronze/`.
-2. **Create a schema for the tables:** `CREATE SCHEMA IF NOT EXISTS data2026acc123456.loans;`
+2. **Create a schema for the tables:** `CREATE SCHEMA IF NOT EXISTS data2026acc123456.team2;`
 3. **Create the pipeline.** Go to Jobs & Pipelines, then Create, then ETL pipeline.
    - Name: `team2-loan-pipeline`
-   - Default catalog `data2026acc123456`, default schema `loans`
+   - Default catalog `data2026acc123456`, default schema `team2`
    - Source code: the `pipelines/` folder from the repo (Databricks Git folder)
    - Settings, Configuration: `spark.sql.session.timeZone` = `UTC`
    - Compute: serverless
@@ -52,13 +52,13 @@ The local test cannot run the parts that only exist in Databricks: `read_files`,
 
 ```sql
 -- 1. Quarantine count per rule: compare with the table below
-SELECT rule_id, action, COUNT(*) AS records FROM data2026acc123456.loans.silver_quarantine GROUP BY ALL ORDER BY rule_id;
+SELECT rule_id, action, COUNT(*) AS records FROM data2026acc123456.team2.silver_quarantine GROUP BY ALL ORDER BY rule_id;
 -- 2. Reconciliation: every row PASS (otherwise the update has already failed)
-SELECT * FROM data2026acc123456.loans.reconciliation;
+SELECT * FROM data2026acc123456.team2.reconciliation;
 -- 3. The KPIs: compare with the table below
-SELECT * FROM data2026acc123456.loans.kpi_portfolio_summary;
+SELECT * FROM data2026acc123456.team2.kpi_portfolio_summary;
 -- 4. Open installments by days past due
-SELECT * FROM data2026acc123456.loans.kpi_open_installment_ageing ORDER BY ageing_bucket;
+SELECT * FROM data2026acc123456.team2.kpi_open_installment_ageing ORDER BY ageing_bucket;
 -- 5. Expectation results per rule, from the event log (quality evidence for the brief)
 SELECT timestamp, details:flow_progress.data_quality.expectations AS expectations
 FROM event_log('<pipeline-id>')
@@ -85,7 +85,7 @@ ORDER BY timestamp DESC;
 | outstanding_balance | 126,777,297.69 | 129,992,400.62 | 131,934,040.91 |
 | manual_review_rate | 0.1774 | 0.1782 | 0.1784 |
 
-## Quality rules (36)
+## Quality rules (37)
 
 - **REJECT** keeps the record out of Silver.
 - **FLAG** keeps the record, either recomputing the bad value or showing it as Unknown.
